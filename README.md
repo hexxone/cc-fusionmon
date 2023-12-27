@@ -8,6 +8,8 @@ This Lua script is designed for use with the ComputerCraft and Mekanism mods in 
 
 It enables the monitoring of various Fusion-related Mekanism devices, providing information on inventory contents, production rates, and operational parameters.
 
+Heavily inspired by: <https://pastebin.com/4XYCedMC>
+
 ## Features
 
 - Monitor inventories of connected Mekanism devices.
@@ -50,10 +52,15 @@ Configure the script by editing the settings within the script file to match you
 You will need to set the correct parameters for each connected computer.
 Devices/Peripherals should be automatically detected and processed.
 
+**The recommended "main" Monitor size for text-scale 1 is 4x5 (x,y).**
+The transmitter Monitors are optional.
+
 The amount of devices has no real limit, but at some point a single computer will take a long time processing all peripherals.
 
 It is recommended to split-up large plants into multiple "Transmitter" Computers.
 
-Refer to the following layout for an example:
+### Plant Layout example
 
 <img src="layout.jpg" alt="layout" width="700"/>
+
+### glhf

@@ -1,15 +1,20 @@
+-- Craftana Fusion Dashboard https://github.com/hexxone/cc-fusionmon
+-- heavily inspired by https://pastebin.com/4XYCedMC
+-- made by https://hexx.one
+
 -- Below are values you can change
 
 local UpdateIntervalSeconds = 3
 local isDisplay = true
-local isTransmitter = false
+local isTransmitter = true
 local isReceiver = true
 local wirelessChannel = 420
 
-local setTextScale = 1.0;
-local VersionInfo = "Craftana - Fusion Dashboard";
+local setTextScale = 1.0
+local linesBetweenCategories = 0
+local VersionInfo = "Craftana - Fusion Dashboard"
 
-local backgroundColor = colors.lightGray;
+local backgroundColor = colors.lightGray
 
 local colorMapping = {
 	water = colors.cyan,
@@ -22,24 +27,19 @@ local colorMapping = {
 	energy = colors.orange
 }
 
-local defaultTextColor = colors.black;
-local colorlessText = colors.black;
-local notConnectedColor = colors.lightGray;
+local defaultTextColor = colors.black
+local colorlessText = colors.black
+local notConnectedColor = colors.lightGray
 
-local categoryBgColor = colors.gray;
-local categoryTextColor = colors.white;
+local categoryBgColor = colors.gray
+local categoryTextColor = colors.white
 
 
 -- Above are values you can change
 
-local DataLen = 6; -- how long the (current/maximum) string will be
-
-local NameLen = 18; -- will be calculated
-local ScreenWidth = 7; -- will be calculated
-
+local MaxLegendLen = 2
 local uid = "pc" .. math.random(100000000, 999999999)
-print("Starting "..VersionInfo.." - uid: " .. uid);
-local CurLine = 1;
+local CurLine = 2
 
 local ContentLayout = {
 	{
@@ -53,8 +53,7 @@ local ContentLayout = {
 			"brine heating temperature",
 			"lithium production",
 			"lithium",
-			"tritium production",
-			"tritium"
+			"tritium production"
 		}
 	},
 	{
@@ -91,25 +90,19 @@ local ContentLayout = {
 
 local ContentData = {};
 
-function PadString (sText, iLen)
-	local iTextLen = string.len(sText);
-	-- Too short, pad
-	if (iTextLen < iLen) then
-		local iDiff = iLen - iTextLen;
-		return(sText..string.rep(" ",iDiff));
+function PadStringR(str, targLen)
+	local txtLen = string.len(str)
+	if (txtLen < targLen) then
+		return(str..string.rep(" ",targLen - txtLen)) -- Too short, pad
 	end
-	-- Too long, trim
-	if (iTextLen > iLen) then
-		return(string.sub(sText,1,iLen));
+	if (txtLen > targLen) then
+		return(string.sub(str,1,targLen)) -- Too long, trim
 	end
-	-- Exact length
-	return(sText);
+	return(str) -- Exact length
 end
 
 function PrepareMonitor(mon)
 	mon.setTextScale(setTextScale)
-	local ScreenWidth, _ = mon.getSize() -- Get the width of the monitor
-	NameLen = (ScreenWidth) - (DataLen)
 
 	if (mon.isColor() == false) then
 		colorMapping.water = colorlessText
@@ -160,7 +153,7 @@ function UpdateTable(timestamp,strName,strCount,strMax,strCategory,strLegend,str
 	--print("UpdateTable: " .. strName .. ", " .. strCount .. "/" .. strMax .. ", #" .. strCategory .. ", l=" .. strLegend)
 end
 
-function PrintMonitorCenter(mon, text, y)
+function WriteMonitorCenter(mon, text, y)
 	local ScreenWidth, _ = mon.getSize() -- Get the width of the monitor
 	mon.setCursorPos(1, y)
 	mon.write(string.rep(" ", ScreenWidth)) -- do a fill-pass
@@ -169,10 +162,10 @@ function PrintMonitorCenter(mon, text, y)
 end
 
 function PrintMonitorCategory(mon, category)
-	CurLine = CurLine + 1
+	CurLine = CurLine + linesBetweenCategories
 	mon.setBackgroundColor(categoryBgColor)
 	mon.setTextColor(categoryTextColor)
-	PrintMonitorCenter(mon, category, CurLine)
+	WriteMonitorCenter(mon, category, CurLine)
 	CurLine = CurLine + 1
 end
 
@@ -180,22 +173,40 @@ end
 function PrintMonitorCategoryEmpty(mon)
 	mon.setBackgroundColor(backgroundColor)
 	mon.setTextColor(categoryBgColor)
-	PrintMonitorCenter(mon, "- no devices -", CurLine)
+	WriteMonitorCenter(mon, "- no devices -", CurLine)
 	CurLine = CurLine + 1
 end
 
 function PrintMonitorStat(mon, strName, strAmount, strMax, strLegend, barColor)
+	local screenWidth, _ = mon.getSize()
+	local nameLen = screenWidth - 10 -- 2 = space, 5 = unit, 1 = exponent, 2 = legend
 
-	local line = string.format("%s  %3i%s", PadString(strName, NameLen + 1), strAmount, PadString(strLegend, 1))
+	local padLegend = PadStringR(strLegend, math.min(MaxLegendLen, string.len(strLegend)))
+	local padName = PadStringR(strName, nameLen)
+
+	local formattedAmount, unit = strAmount, ""
+	-- Determine the unit and format the amount accordingly
 	if (strAmount >= 1099511627776) then
-		line = string.format("%s  %3iT%s", PadString(strName, NameLen), math.floor(strAmount/1099511627776), PadString(strLegend, 1))
+		formattedAmount = math.floor(strAmount / 1099511627776)
+		unit = "T"
 	elseif (strAmount >= 1073741824) then
-			line = string.format("%s  %3iG%s", PadString(strName, NameLen), math.floor(strAmount/1073741824), PadString(strLegend, 1))
+		formattedAmount = math.floor(strAmount / 1073741824)
+		unit = "G"
 	elseif (strAmount >= 1048576) then
-		line = string.format("%s  %3iM%s", PadString(strName, NameLen), math.floor(strAmount/1048576), PadString(strLegend, 1))
+		formattedAmount = math.floor(strAmount / 1048576)
+		unit = "M"
 	elseif (strAmount >= 1024) then
-		line = string.format("%s  %3iK%s", PadString(strName, NameLen), math.floor(strAmount/1024), PadString(strLegend, 1))
+		formattedAmount = math.floor(strAmount / 1024)
+		unit = "K"
+	elseif (strAmount >= 100) then
+		formattedAmount = string.format("%.1f", strAmount)
+	elseif (strAmount >= 10) then
+		formattedAmount = string.format("%.2f", strAmount)
+	else
+		formattedAmount = string.format("%.3f", strAmount)
 	end
+	local paddedAmount = string.format("%5s", formattedAmount)
+	local line = string.format("%s  %8s", padName, paddedAmount .. unit .. padLegend)
 
 	mon.setCursorPos(1,CurLine);
 	local percent = 0;
@@ -206,7 +217,7 @@ function PrintMonitorStat(mon, strName, strAmount, strMax, strLegend, barColor)
 
 	local minCap = 0;
 	if(strAmount > 0) then;	minCap = 1;	end -- always show one bar length if > 0
-	local barlength = math.max(minCap, math.floor(percent / 100 * (string.len(line)-1)));
+	local barlength = math.max(minCap, math.floor(percent / 100 * (string.len(line))));
 
 	mon.setTextColor(defaultTextColor)
 
@@ -228,7 +239,7 @@ function PrintMonitorStat(mon, strName, strAmount, strMax, strLegend, barColor)
 
 		mon.setBackgroundColor(backgroundColor)
 		mon.setTextColor(defaultTextColor)
-		mon.write(string.sub(line,barlength+1,-2))
+		mon.write(string.sub(line,barlength+1))
 	else
 		-- bar is filled completely -> just print
 		local spaces = barlength - string.len(line)
@@ -357,14 +368,14 @@ function CollectLocalData()
 							if (amount == nil) then
 								amount = 0;
 							end
-							amount = math.floor(amount/1000);
+							amount = amount/1000;
 							itemData[displayname] = amount;
 						else
 							amount = iteminfo.stored.Amount;
 							if (amount == nil) then
 								amount = 0;
 							end	
-							amount = math.floor(amount/1000);
+							amount = amount/1000;
 							itemData[displayname] = itemData[displayname] + amount;
 						end
 					end
@@ -375,49 +386,16 @@ function CollectLocalData()
 			end
 		end
 
-		if (p.getTankInfo ~= nil or p.getFilledPercentage ~= nil or p.tanks) then
-			PrintTerminalBottom(i .. ": Processing Tank");
-			local iteminfo;
-			local capacity;
-			if (p.getTankInfo ~= nil) then
-				iteminfo = p.getTankInfo();
-			end
-			if (p.getFilledPercentage ~= nil) then
-				iteminfo = p.getStored();
-			end
-			if (p.tanks ~= nil) then
-				local tankinfo = p.tanks(); -- Industrial Foregoing blackhole tank
-				if (tankinfo[1] ~= nil) then
-					iteminfo = tankinfo[1];
-				end
-			end
-			if(p.getCapacity ~= nil) then
-				capacity = math.floor(p.getCapacity() / 1000); -- Mekanism Tank
-			end
-			if (iteminfo ~= nil) then
-				local displayname = "Empty";
-				local amount = 0;
-				if (iteminfo[1] ~= nil) then
-					if (iteminfo[1].contents) then
-						displayname = iteminfo[1].contents.rawName;
-						amount = iteminfo[1].contents.amount;
-						amount = math.floor(amount/1000);
-					end
-				end
-				if (iteminfo.name ~= nil) then
-					displayname = iteminfo.name;
-				end
-				if (iteminfo.amount ~= nil) then
-					amount = iteminfo.amount;
-					amount = math.floor(amount/1000);
-				end
-				displayname = StripItemName(displayname);
-
-				if(capacity == nil or capacity < amount) then
-					capacity = amount;
-				end
-				if (amount ~= 0) then
-					UpdateTable(timestamp, displayname, amount, capacity, "buffer", "b", GetColorForFluidName(displayname)); -- @TODO MAX, COLOR
+		if string.match(pType, "ChemicalTank") then
+			PrintTerminalBottom(i .. ": Processing Chemical Tank");
+			local category = "buffer"
+			-- Content (sum)
+			if(p.getStored ~= nil and p.getCapacity ~= nil) then
+				local stored = p.getStored()
+				local capacity = p.getCapacity()
+				if(stored.amount ~= nil and stored.name ~= nil and capacity ~= nil) then
+					local displayname = StripItemName(stored.name)
+					UpdateTable(timestamp, displayname, stored.amount/1000, capacity/1000, category, "b", GetColorForFluidName(displayname)); -- @TODO MAX
 				end
 			end
 		end
@@ -438,14 +416,14 @@ function CollectLocalData()
 				end
 				if(inputAmount ~= nil and inputName ~= nil and inputCapacity ~= nil) then
 					local inputColor = GetColorForFluidName(inputName)
-					UpdateTable(timestamp, inputName, inputAmount, inputCapacity, category, "b", inputColor)
+					UpdateTable(timestamp, inputName, inputAmount/1000, inputCapacity/1000, category, "b", inputColor)
 
 					-- input heating (average)
 					if(p.getTemperature ~= nil) then
 						local temperature = p.getTemperature()
 						local tempCapacity = 3000 -- TODO exact limit needed depends on height? and fluid???
 						if(temperature ~= nil and tempCapacity ~= nil) then
-							UpdateTable(timestamp, inputName .. " heating temperature", temperature, tempCapacity, category, "b", inputColor)
+							UpdateTable(timestamp, inputName .. " heating temperature", temperature, tempCapacity, category, "^C", inputColor)
 						end
 					end
 
@@ -459,7 +437,7 @@ function CollectLocalData()
 						end
 						if(productionAmount ~= nil and productionName ~= nil and productionCapacity ~= nil) then
 							local productionColor = GetColorForFluidName(productionName)
-							UpdateTable(timestamp, productionName .. " production", productionAmount, productionCapacity, category, "b", productionColor)
+							UpdateTable(timestamp, productionName .. " production", productionAmount/1000, productionCapacity/1000, category, "b", productionColor)
 						end
 
 					end
@@ -476,7 +454,7 @@ function CollectLocalData()
 					outputName = StripItemName(output.name)
 				end
 				if(outputAmount ~= nil and outputName ~= nil and outputCapacity ~= nil) then
-					UpdateTable(timestamp, outputName, outputAmount, outputCapacity, category, "b", GetColorForFluidName(outputName));
+					UpdateTable(timestamp, outputName, outputAmount/1000, outputCapacity/1000, category, "b", GetColorForFluidName(outputName));
 				end
 			end
 		end
@@ -497,7 +475,7 @@ function CollectLocalData()
 				end
 				if(inputAmount ~= nil and inputName ~= nil and inputCapacity ~= nil) then
 					local inputColor = GetColorForFluidName(inputName)
-					UpdateTable(timestamp, inputName, inputAmount, inputCapacity, category, "b", inputColor)
+					UpdateTable(timestamp, inputName, inputAmount/1000, inputCapacity/1000, category, "b", inputColor)
 
 					-- output Production (sum), get this from input and invert it because output will probably be empty at some point.
 					if(p.getProductionRate ~= nil and p.getPeakProductionRate ~= nil) then
@@ -507,13 +485,13 @@ function CollectLocalData()
 
 						if(productionAmount ~= nil and productionName ~= nil and productionCapacity ~= nil) then
 							local productionColor = GetColorForFluidName(productionName)
-							UpdateTable(timestamp, productionName .. " production", productionAmount, productionCapacity, category, "b", productionColor)
+							UpdateTable(timestamp, productionName .. " production", productionAmount/1000, productionCapacity/1000, category, "b", productionColor)
 						end
 
 					end
 				end
 			end
-			-- Output (sum)
+			-- Output (sum) -> assume as buffer
 			if(p.getOutput ~= nil and p.getOutputCapacity  ~= nil) then
 				local output = p.getOutput()
 				local outputAmount = nil
@@ -524,7 +502,7 @@ function CollectLocalData()
 					outputName = StripItemName(output.name)
 				end
 				if(outputAmount ~= nil and outputName ~= nil and outputCapacity ~= nil) then
-					UpdateTable(timestamp, outputName, outputAmount, outputCapacity, category, "b", GetColorForFluidName(outputName));
+					UpdateTable(timestamp, outputName, outputAmount/1000, outputCapacity/1000, "buffer", "b", GetColorForFluidName(outputName));
 				end
 			end
 		end
@@ -536,19 +514,19 @@ function CollectLocalData()
 			if(p.getDTFuel ~= nil) then
 				local dtFuelData = p.getDTFuel();
 				if (dtFuelData ~= nil) then
-					UpdateTable(timestamp, "d-t fuel", dtFuelData.amount, 1000, category, "b", colorMapping.d_t_fuel);
+					UpdateTable(timestamp, "d-t fuel", dtFuelData.amount/1000, 1, category, "b", colorMapping.d_t_fuel);
 				end
 			end
 			if (p.getInjectionRate ~= nil) then
 				local injectionRate = p.getInjectionRate();
 				if (injectionRate ~= nil) then
-					UpdateTable(timestamp, "injection rate", injectionRate, 99, category, "b", colorMapping.d_t_fuel);
+					UpdateTable(timestamp, "injection rate", injectionRate/1000, 99/1000, category, "b", colorMapping.d_t_fuel);
 				end
 			end
 			if (p.getProductionRate ~= nil) then
 				local productionRate = p.getProductionRate();
 				if (productionRate ~= nil) then
-					UpdateTable(timestamp, "steam production", productionRate, productionRate, category, "b", colorMapping.steam);
+					UpdateTable(timestamp, "steam production", productionRate/1000, productionRate/1000, category, "b", colorMapping.steam);
 				end
 			end
 			if(p.getSteam ~= nil and p.getSteamCapacity  ~= nil) then
@@ -559,7 +537,7 @@ function CollectLocalData()
 					steamAmount = steam.amount
 				end
 				if(steamAmount ~= nil and steamCapacity ~= nil) then
-					UpdateTable(timestamp, "steam", steamAmount, steamCapacity, category, "b", colorMapping.steam);
+					UpdateTable(timestamp, "steam", steamAmount/1000, steamCapacity/1000, category, "b", colorMapping.steam);
 				end
 			end
 			if(p.getWater ~= nil and p.getWaterCapacity  ~= nil) then
@@ -570,7 +548,7 @@ function CollectLocalData()
 					waterAmount = water.amount
 				end
 				if(waterAmount ~= nil and waterCapacity ~= nil) then
-					UpdateTable(timestamp, "water", waterAmount, waterCapacity, category, "b", colorMapping.water);
+					UpdateTable(timestamp, "water", waterAmount/1000, waterCapacity/1000, category, "b", colorMapping.water);
 				end
 			end
 			if(p.getDeuterium ~= nil and p.getDeuteriumCapacity  ~= nil) then
@@ -581,7 +559,7 @@ function CollectLocalData()
 					deuteriumAmount = deuterium.amount
 				end
 				if(deuteriumAmount ~= nil and deuteriumCapacity ~= nil) then
-					UpdateTable(timestamp, "deuterium", deuteriumAmount, deuteriumCapacity, category, "b", colorMapping.deuterium);
+					UpdateTable(timestamp, "deuterium", deuteriumAmount/1000, deuteriumCapacity/1000, "buffer", "b", colorMapping.deuterium);
 				end
 			end
 			if(p.getTritium ~= nil and p.getTritiumCapacity ~= nil) then
@@ -592,7 +570,7 @@ function CollectLocalData()
 					tritiumAmount = tritium.amount
 				end
 				if(tritiumAmount ~= nil and tritiumCapacity ~= nil) then
-					UpdateTable(timestamp, "tritium", tritiumAmount, tritiumCapacity, category, "b", colorMapping.tritium);
+					UpdateTable(timestamp, "tritium", tritiumAmount/1000, tritiumCapacity/1000, "buffer", "b", colorMapping.tritium);
 				end
 			end
 		end
@@ -618,7 +596,7 @@ function CollectLocalData()
 				local turbineFlowRate = p.getFlowRate();
 				local maxFlowRate = p.getMaxFlowRate();
 				if (turbineFlowRate ~= nil and maxFlowRate ~= nil) then
-					UpdateTable(timestamp,"steam flow rate", turbineFlowRate, maxFlowRate, category, "b", colorMapping.steam);
+					UpdateTable(timestamp,"steam flow rate", turbineFlowRate/1000, maxFlowRate/1000, category, "b", colorMapping.steam);
 				end
 			end
 
@@ -630,7 +608,7 @@ function CollectLocalData()
 					steamAmount = steam.amount
 				end
 				if(steamAmount ~= nil and steamCapacity ~= nil) then
-					UpdateTable(timestamp, "steam", steamAmount, steamCapacity, category, "b", colorMapping.steam);
+					UpdateTable(timestamp, "steam", steamAmount/1000, steamCapacity/1000, category, "b", colorMapping.steam);
 				end
 			end
 
@@ -638,7 +616,7 @@ function CollectLocalData()
 				local productionRate = p.getProductionRate();
 				local maxProduction = p.getMaxProduction();
 				if (productionRate ~= nil and maxProduction ~= nil) then
-					UpdateTable(timestamp,"energy production",productionRate, maxProduction, category, "", colorMapping.energy);
+					UpdateTable(timestamp,"energy production", productionRate, maxProduction, category, "FE", colorMapping.energy);
 				end
 			end
 
@@ -650,39 +628,36 @@ function CollectLocalData()
 				end
 			end
 		end
-
-		--print("Done");
 	end
 
 	-- remove old data
-	if(ContentData[uid] ~= nil) then
-		local sortedTimestamps = {}
-		for timestamp in pairs(ContentData[uid]) do
-			table.insert(sortedTimestamps, timestamp)
-		end
-		table.sort(sortedTimestamps)
-		local latest = nil
-		for j = table.maxn(sortedTimestamps), 1, -1 do
-			if latest == nil then
-				latest = sortedTimestamps[j]
-			else
-				ContentData[uid][sortedTimestamps[j]] = nil
+	if(ContentData ~= nil) then
+		for id in pairs(ContentData) do
+			local sortedTimestamps = {}
+			for timestamp in pairs(ContentData[id]) do
+				table.insert(sortedTimestamps, timestamp)
+			end
+			table.sort(sortedTimestamps)
+			local latest = nil
+			for j = table.maxn(sortedTimestamps), 1, -1 do
+				if latest == nil then
+					latest = sortedTimestamps[j]
+				else
+					ContentData[id][sortedTimestamps[j]] = nil
+				end
 			end
 		end
+
 	end
 end
 
 function UpdateMonitor(mon, stateChar)
 	PrintTerminalBottom("Updating monitor.");
 
-	ColumnWidth = NameLen + 7
-
-	local ScreenWidth, _ = mon.getSize() -- Get the width of the monitor
-	MaxColumn = math.floor(ScreenWidth / (ColumnWidth)) - 1
 	mon.setBackgroundColor(backgroundColor)
 	mon.clear()
 	mon.setTextColor(colors.white)
-	PrintMonitorCenter(mon, stateChar .. " " .. VersionInfo .. " " .. stateChar, 1)
+	WriteMonitorCenter(mon, stateChar .. " " .. VersionInfo .. " " .. stateChar, 1)
 	CurLine = 2
 
 	-- process categories and items downward, skipping empty ones.
@@ -692,8 +667,8 @@ function UpdateMonitor(mon, stateChar)
 		PrintMonitorCategory(mon, layout.text)
 		for j,strName in pairs(layout.items) do
 
-			local legend
-			local color
+			local legend = nil
+			local color = nil
 			local strCount = 0
 			local strMax = 0
 
@@ -718,7 +693,7 @@ function UpdateMonitor(mon, stateChar)
 					if (ContentData[id][timestamp][strCategory][strName]["max"] ~= nil) then
 						strMax = strMax + ContentData[id][timestamp][strCategory][strName]["max"];
 					end
-				    ::continue::
+					::continue::
 				end
 			end
 
@@ -733,7 +708,6 @@ function UpdateMonitor(mon, stateChar)
 		end
 	end
 end
-
 
 function PrintTerminalCenter(text, y)
 	local TermWidth, _ = term.getSize() -- Get the width of the monitor
@@ -752,25 +726,31 @@ function PrintTerminalBottom(text)
 	term.setCursorPos(1, TermHeight)
 end
 
--- This is the main section of the script
-local monitor = nil;
-local modem = nil;
-local peripherals = nil;
-ContentData = {};
-
-if(isReceiver and isTransmitter) then
-	error("Cannot be receiver and transmitter at the same time.")
+function GetTableSize(t)
+	local count = 0
+	for _, __ in pairs(t) do
+		count = count + 1
+	end
+	return count
 end
+
+-- This is the main section of the script
+
+print("Starting: " .. VersionInfo);
+print("UID:      " .. uid);
 
 if(not isTransmitter and not isDisplay) then
 	error("Not a Transmitter and not a Monitor -> nothing to do.")
 end
 
+local monitor = nil;
+local modem = nil;
+local peripherals = nil;
+
 function ConfigurePeripherals()
 	if(isDisplay) then
 		monitor = GetMonitor();
 	end
-
 	if(isReceiver or isTransmitter) then
 		modem = GetWirelessModem();
 		modem.open(wirelessChannel);
@@ -781,19 +761,22 @@ function ConfigurePeripherals()
 	term.setCursorPos(1,1)
 	PrintTerminalCenter("Running " .. VersionInfo, 1)
 	term.setCursorPos(1,3)
-	print("Is Display:  " .. tostring(isDisplay))
-	print("Is Sender:   " .. tostring(isTransmitter))
-	print("Is Receiver: " .. tostring(isReceiver))
-	print("Channel:     " .. wirelessChannel)
-	print("Peripherals: " .. #peripherals)
-	print("Heartbeat:   ")
+	print("Is Display:   " .. tostring(isDisplay))
+	print("Is Sender:    " .. tostring(isTransmitter))
+	print("Is Receiver:  " .. tostring(isReceiver))
+	print("Channel:      " .. wirelessChannel)
+	print("Peripherals:  " .. #peripherals)
+	print("Network size: " .. (GetTableSize(ContentData)))
+	print("Heartbeat:    ")
 	PrintTerminalBottom("Updated peripherals.")
 end
 
 ConfigurePeripherals();
 
-
 -- Perform Initial Collection and Update the Monitor if given
+if monitor then
+	UpdateMonitor(monitor, "+");
+end
 CollectLocalData();
 if monitor then
 	UpdateMonitor(monitor, "#");
@@ -810,7 +793,7 @@ while true do
 		heartChar = "+"
 	end
 	heartbeat = not heartbeat
-	term.setCursorPos(14,8)
+	term.setCursorPos(15,9)
 	term.write(heartChar)
 
 	local event, param1, param2, param3, param4, param5 = os.pullEvent();
@@ -830,13 +813,18 @@ while true do
 			timerUpdate = os.startTimer(UpdateIntervalSeconds);
 		end
 	end
+
 	if (event == "modem_message") then
 		if (isReceiver == true) then
-			PrintTerminalBottom("Received data: "..event);
 			wirelessEventCount = wirelessEventCount + 1;
 			for extId,data in pairs(param4) do
-				if (data ~= nil) then
+				local isNew = ContentData[extId] ~= nil;
+				if (extId ~= uid and data ~= nil) then
 					ContentData[extId] = data;
+					if (isNew) then
+						ConfigurePeripherals()
+					end
+					PrintTerminalBottom("Received data from: "..extId);
 				end
 			end
 			if (wirelessEventCount >= 10) then
@@ -844,12 +832,14 @@ while true do
 			end
 		end
 	end
+
 	if (event == "monitor_touch") or (event == "monitor_resize") then
 		if monitor then
 			PrintTerminalBottom("Updating monitor.");
 			UpdateMonitor(monitor, heartChar);
 		end
 	end
+
 	if (event == "peripheral") or (event == "peripheral_detach") then
 		PrintTerminalBottom("Updating peripherals.");
 		ConfigurePeripherals();
