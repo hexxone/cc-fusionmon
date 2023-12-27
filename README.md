@@ -52,8 +52,11 @@ Configure the script by editing the settings within the script file to match you
 You will need to set the correct parameters for each connected computer.
 Devices/Peripherals should be automatically detected and processed.
 
-**The recommended "main" Monitor size for text-scale 1 is 4x5 (x,y).**
-The transmitter Monitors are optional.
+**The recommended "main" Monitor size for text-scale=1 and category-spacing=1, is 4x5 (x,y).**
+
+You can however also use category-spacing=0 to cramp everything onto a 4x4 screen.
+
+Monitors on transmitters are optional.
 
 The amount of devices has no real limit, but at some point a single computer will take a long time processing all peripherals.
 

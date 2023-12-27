@@ -5,6 +5,8 @@
 -- Below are values you can change
 
 local UpdateIntervalSeconds = 3
+local RemoveOldDataAfterSec = 120
+
 local isDisplay = true
 local isTransmitter = true
 local isReceiver = true
@@ -312,7 +314,7 @@ end
 
 function CollectLocalData()
 	PrintTerminalBottom("Collecing data.");
-	local timestamp = os.clock();
+	local timestamp = os.epoch("local");
 
 	local peripherals = peripheral.getNames()
 	for i,name in pairs(peripherals) do
@@ -630,25 +632,6 @@ function CollectLocalData()
 		end
 	end
 
-	-- remove old data
-	if(ContentData ~= nil) then
-		for id in pairs(ContentData) do
-			local sortedTimestamps = {}
-			for timestamp in pairs(ContentData[id]) do
-				table.insert(sortedTimestamps, timestamp)
-			end
-			table.sort(sortedTimestamps)
-			local latest = nil
-			for j = table.maxn(sortedTimestamps), 1, -1 do
-				if latest == nil then
-					latest = sortedTimestamps[j]
-				else
-					ContentData[id][sortedTimestamps[j]] = nil
-				end
-			end
-		end
-
-	end
 end
 
 function UpdateMonitor(mon, stateChar)
@@ -734,6 +717,33 @@ function GetTableSize(t)
 	return count
 end
 
+function CheckRequiredMonitorSize(mon)
+	local dataLen = 10
+	local longestLine = dataLen
+	local lineCount = 1
+	for i,layout in pairs(ContentLayout) do
+		lineCount = lineCount + 1 + linesBetweenCategories
+		for j, itm in pairs(layout.items) do
+			lineCount = lineCount + 1
+			local sLen = string.len(itm) + dataLen
+			if (sLen > longestLine) then
+				longestLine = sLen
+			end
+		end
+	end
+	local scaledLines = math.ceil(lineCount * setTextScale)
+	local scaledWidth = math.ceil(longestLine * setTextScale)
+	local screenWidth, screenHeight = mon.getSize()
+	if(scaledLines > screenHeight) then
+		print("WARNING: Monitor height: " .. scaledLines .. " > " .. screenHeight)
+		sleep(7)
+	end
+	if(scaledWidth > screenWidth) then
+		print("WARNING: Monitor width: " .. scaledWidth .. " > " .. screenWidth)
+		sleep(7)
+	end
+end
+
 -- This is the main section of the script
 
 print("Starting: " .. VersionInfo);
@@ -747,9 +757,12 @@ local monitor = nil;
 local modem = nil;
 local peripherals = nil;
 
-function ConfigurePeripherals()
+function ConfigurePeripherals(checkSize)
 	if(isDisplay) then
 		monitor = GetMonitor();
+		if(checkSize ~= nil) then
+			CheckRequiredMonitorSize(monitor)
+		end
 	end
 	if(isReceiver or isTransmitter) then
 		modem = GetWirelessModem();
@@ -766,12 +779,12 @@ function ConfigurePeripherals()
 	print("Is Receiver:  " .. tostring(isReceiver))
 	print("Channel:      " .. wirelessChannel)
 	print("Peripherals:  " .. #peripherals)
-	print("Network size: " .. (GetTableSize(ContentData)))
+	print("Data sources: " .. (GetTableSize(ContentData)))
 	print("Heartbeat:    ")
 	PrintTerminalBottom("Updated peripherals.")
 end
 
-ConfigurePeripherals();
+ConfigurePeripherals(true);
 
 -- Perform Initial Collection and Update the Monitor if given
 if monitor then
@@ -843,5 +856,35 @@ while true do
 	if (event == "peripheral") or (event == "peripheral_detach") then
 		PrintTerminalBottom("Updating peripherals.");
 		ConfigurePeripherals();
+	end
+
+
+	-- remove old data
+	if(ContentData ~= nil) then
+		local removeBefore = (os.epoch("local") / 1000) - RemoveOldDataAfterSec
+
+		for id in pairs(ContentData) do
+			local sortedTimestamps = {}
+			for timestamp in pairs(ContentData[id]) do
+				if(timestamp / 1000 >= removeBefore) then
+					table.insert(sortedTimestamps, timestamp)
+				else
+					ContentData[id][timestamp] = nil -- network device timeout
+				end
+			end
+			table.sort(sortedTimestamps)
+			local latest = nil
+			for j = table.maxn(sortedTimestamps), 1, -1 do
+				if latest == nil then
+					latest = sortedTimestamps[j]
+				else
+					ContentData[id][sortedTimestamps[j]] = nil -- not the latest data
+				end
+			end
+			if(next(ContentData[id]) == nil) then
+				ContentData[id] = nil -- device has no data
+			end
+		end
+
 	end
 end
