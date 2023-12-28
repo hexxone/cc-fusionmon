@@ -7,7 +7,7 @@
 local Settings = {
 	UID = "fm" .. math.random(100000, 999999),
 	UpdateInterval = 2,
-	DeviceTimeout = 120,
+	DeviceTimeout = 60,
 
 	IsDisplay = true,
 	IsTransmitter = true,
@@ -107,11 +107,16 @@ local ContentLayout = {
 	}
 }
 
+local AverageValues = {
+	"water heating temperature",
+	"brine heating temperature"
+}
+
 local ContentData = {}
 
 local outDevice = nil
 local modem = nil
-local peripherals = nil
+local peripherals = {}
 local heartbeat = true
 
 -- ==== Utility Functions ====
@@ -134,6 +139,15 @@ function GetTableSize(t)
 		count = count + 1
 	end
 	return count
+end
+
+function TableContains(table, val)
+    for i, v in ipairs(table) do
+        if v == val then
+            return true
+        end
+    end
+    return false
 end
 
 function StripItemName(strName)
@@ -212,6 +226,11 @@ function UpdateTable(timestamp,strName,strCount,strMax,strCategory,strLegend,str
 	if (ContentData[uid][timestamp][strCategory][strName] == nil) then
 		ContentData[uid][timestamp][strCategory][strName] = {}
 	end
+	if (ContentData[uid][timestamp][strCategory][strName]["devices"] == nil) then
+		ContentData[uid][timestamp][strCategory][strName]["devices"] = 1
+	else
+		ContentData[uid][timestamp][strCategory][strName]["devices"] = ContentData[uid][timestamp][strCategory][strName]["devices"] + 1
+	end
 	if (ContentData[uid][timestamp][strCategory][strName]["count"] == nil) then
 		ContentData[uid][timestamp][strCategory][strName]["count"] = strCount
 	else
@@ -227,11 +246,11 @@ function UpdateTable(timestamp,strName,strCount,strMax,strCategory,strLegend,str
 end
 
 
-function ProcessAdvancedPeripherals(timestamp, i, p)
-	PrintTermBtm(i .. ": Processing Advanced Peripherals")
+function ProcessAdvancedPeripherals(timestamp, p)
+	-- PrintTermBtm(i .. ": Processing Advanced Peripherals")
 	local blockdata = p.getBlockData()
 	if (blockdata.GasTanks) then
-		PrintTermBtm(i .. ": Processing Gas Storage via Advanced Peripherals")
+		-- PrintTermBtm(i .. ": Processing Gas Storage via Advanced Peripherals")
 		local itemData = {}
 		for j in pairs(blockdata.GasTanks) do
 			local iteminfo = blockdata.GasTanks[j]
@@ -262,7 +281,7 @@ function ProcessAdvancedPeripherals(timestamp, i, p)
 	end
 
 	if (blockdata.FluidTanks) then
-		PrintTermBtm(i .. ": Processing Fluid Storage via Advanced Peripherals")
+		-- PrintTermBtm(i .. ": Processing Fluid Storage via Advanced Peripherals")
 		local itemData = {}
 		for j in pairs(blockdata.FluidTanks) do
 			local iteminfo = blockdata.FluidTanks[j]
@@ -294,8 +313,8 @@ function ProcessAdvancedPeripherals(timestamp, i, p)
 end
 
 
-function ProcessChemTank(timestamp, i, p)
-	PrintTermBtm(i .. ": Processing Chemical Tank")
+function ProcessChemTank(timestamp, p)
+	-- PrintTermBtm(i .. ": Processing Chemical Tank")
 	local category = "buffer"
 	-- Content (sum)
 	if(p.getStored ~= nil and p.getCapacity ~= nil) then
@@ -308,8 +327,8 @@ function ProcessChemTank(timestamp, i, p)
 	end
 end
 
-function ProcessTEP(timestamp, i, p)
-	PrintTermBtm(i .. ": Processing Thermal Evaporation Plant Valve")
+function ProcessTEP(timestamp, p)
+	-- PrintTermBtm(i .. ": Processing Thermal Evaporation Plant Valve")
 	local category = "tritium"
 	-- Input (sum)
 	if(p.getInput ~= nil and p.getInputCapacity  ~= nil) then
@@ -366,8 +385,8 @@ function ProcessTEP(timestamp, i, p)
 	end
 end
 
-function ProcessSNA(timestamp, i, p)
-	PrintTermBtm(i .. ": Processing Solar Neutron Activator")
+function ProcessSNA(timestamp, p)
+	-- PrintTermBtm(i .. ": Processing Solar Neutron Activator")
 	local category = "tritium"
 	-- Input (sum)
 	if(p.getInput ~= nil and p.getInputCapacity  ~= nil) then
@@ -413,8 +432,8 @@ function ProcessSNA(timestamp, i, p)
 	end
 end
 
-function ProcessFusionLogic(timestamp, i, p)
-	PrintTermBtm(i .. ": Processing Fusion Reactor Logic Adapter")
+function ProcessFusionLogic(timestamp, p)
+	-- PrintTermBtm(i .. ": Processing Fusion Reactor Logic Adapter")
 	local category = "fusion"
 	if(p.getDTFuel ~= nil) then
 		local dtFuelData = p.getDTFuel()
@@ -480,8 +499,8 @@ function ProcessFusionLogic(timestamp, i, p)
 	end
 end
 
-function ProcessFusionPort(timestamp, i, p)
-	PrintTermBtm(i .. ": Processing Fusion Reactor Port")
+function ProcessFusionPort(timestamp, p)
+	-- PrintTermBtm(i .. ": Processing Fusion Reactor Port")
 	local category = "fusion"
 
 	if (p.getEnergy ~= nil and p.getMaxEnergy ~= nil) then
@@ -493,8 +512,8 @@ function ProcessFusionPort(timestamp, i, p)
 	end
 end
 
-function ProcessTurbine(timestamp, i, p)
-	PrintTermBtm(i .. ": Processing Steam Turbine")
+function ProcessTurbine(timestamp, p)
+	-- PrintTermBtm(i .. ": Processing Steam Turbine")
 	local category = "turbine"
 
 	if(p.getFlowRate ~= nil and p.getMaxFlowRate ~= nil) then
@@ -536,72 +555,63 @@ end
 
 
 -- Function to process a chunk of peripherals
-function ProcessPeripheralChunk(chunk, offset)
-    local timestamp = os.epoch("local")
+function ProcessPeripheralChunk(chunk, timestamp)
     for j, name in pairs(chunk) do
-		local i = offset + j
         local p = peripheral.wrap(name)
         local pType = peripheral.getType(name)
 
 		if (p.getBlockData ~= nil) then
-			ProcessAdvancedPeripherals(timestamp, i, p)
+			ProcessAdvancedPeripherals(timestamp, p)
 		end
-
 		if string.match(pType, "ChemicalTank") then
-			ProcessChemTank(timestamp, i, p)
+			ProcessChemTank(timestamp, p)
 		elseif(pType == "thermalEvaporationValve") then
-			ProcessTEP(timestamp, i, p)
+			ProcessTEP(timestamp, p)
 		elseif(pType == "solarNeutronActivator") then
-			ProcessSNA(timestamp, i, p)
+			ProcessSNA(timestamp, p)
 		elseif(pType == "fusionReactorLogicAdapter") then
-			ProcessFusionLogic(timestamp, i, p)
+			ProcessFusionLogic(timestamp, p)
 		elseif(pType == "fusionReactorPort") then
-			ProcessFusionPort(timestamp, i, p)
+			ProcessFusionPort(timestamp, p)
 		elseif(pType == "turbineValve") then
-			ProcessTurbine(timestamp, i, p)
+			ProcessTurbine(timestamp, p)
 		elseif(pType ~= "modem" and pType ~= "monitor") then
-			PrintTermBtm(i .. " Unknown: " .. name)
+			PrintTermBtm("Unknown: " .. name)
 		end
     end
 end
 
-function SplitList(list, chunkSize)
-    local chunks = {}
-    for i = 1, #list, chunkSize do
-        local chunk = {}
-        for j = i, math.min(i + chunkSize - 1, #list) do
-            table.insert(chunk, list[j])
-        end
-        table.insert(chunks, chunk)
+function SplitList(inputTable, numberOfTables)
+    local splitTables = {}
+    for i = 1, numberOfTables do
+        splitTables[i] = {}
     end
-    return chunks
+    for i, value in ipairs(inputTable) do
+        local tableIndex = ((i - 1) % numberOfTables) + 1
+        table.insert(splitTables[tableIndex], value)
+    end
+    return splitTables
 end
 
 function CollectLocalData()
-
-	local peripheralsPerTask = 10
-	-- calculate the desired amount of threads, up to max 5
-	local chunkCount = math.min(5, math.ceil(#peripherals / peripheralsPerTask))
-
+    local timestamp = os.epoch("local")
+	local peripheralsPerTask = 5
+	-- calculate the desired amount of Tasks, up to max 5
+	local chunkCount = math.min(10, math.ceil(#peripherals / peripheralsPerTask))
 	if(chunkCount > 1) then
 		PrintTermBtm("Collecting data. (" .. chunkCount .. " threads)")
-		local chunkSize = math.ceil(#peripherals / chunkCount)
-		local chunks = SplitList(peripherals, chunkSize)
-
+		local chunks = SplitList(peripherals, chunkCount)
 		-- Create a task for each chunk
 		local tasks = {}
-		local offset = 0
-		for _, chunk in ipairs(chunks) do
-			table.insert(tasks, function() ProcessPeripheralChunk(chunk, offset) end)
-			offset = offset + #chunk
+		for i,chunk in ipairs(chunks) do
+			table.insert(tasks, function() ProcessPeripheralChunk(chunk, timestamp) end)
 		end
-
-		-- Run the tasks in parallel
+		-- Run in parallel
 		parallel.waitForAll(table.unpack(tasks))
 	else
 		PrintTermBtm("Collecting data. (1 thread)")
 		-- If there are fewer than 10 peripherals, process them in current task
-        ProcessPeripheralChunk(peripherals, 0)
+        ProcessPeripheralChunk(peripherals, timestamp)
 	end
 end
 
@@ -756,8 +766,38 @@ end
 -- ==== Main Program Logic ====
 
 
+function RemoveOldData()
+	if(ContentData == nil) then
+		return
+	end
+	local removeBefore = (os.epoch("local") / 1000) - Settings.DeviceTimeout
+	for id in pairs(ContentData) do
+		local sortedTimestamps = {}
+		for timestamp in pairs(ContentData[id]) do
+			if(timestamp / 1000 >= removeBefore) then
+				table.insert(sortedTimestamps, timestamp)
+			else
+				ContentData[id][timestamp] = nil -- network device timeout
+			end
+		end
+		table.sort(sortedTimestamps)
+		local latest = nil
+		for j = table.maxn(sortedTimestamps), 1, -1 do
+			if latest == nil then
+				latest = sortedTimestamps[j]
+			else
+				ContentData[id][sortedTimestamps[j]] = nil -- not the latest data
+			end
+		end
+		if(next(ContentData[id]) == nil) then
+			ContentData[id] = nil -- device has no data
+		end
+	end
+end
+
 function UpdateMonitor(mon)
 	PrintTermBtm("Updating monitor.")
+
 	local heartChar = "#"
 	if(heartbeat) then
 		heartChar = "+"
@@ -788,6 +828,7 @@ function UpdateMonitor(mon)
 			local color = nil
 			local strCount = 0
 			local strMax = 0
+			local deviceCount = 0
 
 			-- aggregate data from all sources, we assume each has only one timestamp
 			for id in pairs(ContentData) do
@@ -805,6 +846,9 @@ function UpdateMonitor(mon)
 					if (ContentData[id][timestamp][strCategory][strName]["color"] ~= nil) then
 						color = ContentData[id][timestamp][strCategory][strName]["color"]
 					end
+					if (ContentData[id][timestamp][strCategory][strName]["devices"] ~= nil) then
+						deviceCount = deviceCount + ContentData[id][timestamp][strCategory][strName]["devices"]
+					end
 					if (ContentData[id][timestamp][strCategory][strName]["count"] ~= nil) then
 						strCount = strCount + ContentData[id][timestamp][strCategory][strName]["count"]
 					end
@@ -813,6 +857,13 @@ function UpdateMonitor(mon)
 					end
 					::continue::
 				end
+			end
+
+			if(deviceCount > 0 and TableContains(AverageValues, strName)) then
+				-- calculate average instead of sum
+				strCount = strCount / deviceCount
+				strMax = strMax / deviceCount
+				strName = strName .. " x" .. deviceCount
 			end
 
 			if ((strCount > 0 or strMax > 0) and (legend ~= nil and color ~= nil)) then
@@ -875,6 +926,7 @@ function MainLoop()
 		if (event == "timer") then
 			if (param1 == timerUpdate) then
 				CollectLocalData()
+				RemoveOldData()
 				if (modem) then
 					if (sett.IsTransmitter) then
 						local sendData = {}
@@ -904,6 +956,8 @@ function MainLoop()
 						ContentData[extId] = data
 						if (isNew) then
 							ConfigurePeripherals()
+						else
+							RemoveOldData()
 						end
 						PrintTermBtm("Received data from: "..extId)
 					end
@@ -924,33 +978,6 @@ function MainLoop()
 		if (event == "peripheral") or (event == "peripheral_detach") then
 			PrintTermBtm("Updating peripherals.")
 			ConfigurePeripherals()
-		end
-
-		-- remove old data
-		if(ContentData ~= nil) then
-			local removeBefore = (os.epoch("local") / 1000) - sett.DeviceTimeout
-			for id in pairs(ContentData) do
-				local sortedTimestamps = {}
-				for timestamp in pairs(ContentData[id]) do
-					if(timestamp / 1000 >= removeBefore) then
-						table.insert(sortedTimestamps, timestamp)
-					else
-						ContentData[id][timestamp] = nil -- network device timeout
-					end
-				end
-				table.sort(sortedTimestamps)
-				local latest = nil
-				for j = table.maxn(sortedTimestamps), 1, -1 do
-					if latest == nil then
-						latest = sortedTimestamps[j]
-					else
-						ContentData[id][sortedTimestamps[j]] = nil -- not the latest data
-					end
-				end
-				if(next(ContentData[id]) == nil) then
-					ContentData[id] = nil -- device has no data
-				end
-			end
 		end
 	end
 end
