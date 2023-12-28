@@ -1,6 +1,7 @@
 # General TODOs
 
 - get max values for advanced peripherals tanks
+- support mekanism multi-block tanks.
 
 ## UI
 
