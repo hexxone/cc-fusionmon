@@ -2,7 +2,7 @@
 -- heavily inspired by https://pastebin.com/4XYCedMC
 -- made by https://hexx.one
 
--- Below are values you can change
+-- ======== SETTINGS START ========
 
 local UpdateIntervalSeconds = 3
 local RemoveOldDataAfterSec = 120
@@ -14,11 +14,13 @@ local wirelessChannel = 420
 
 local setTextScale = 1.0
 local linesBetweenCategories = 0
+
+local printVersion = true
 local VersionInfo = "Craftana - Fusion Dashboard"
 
 local backgroundColor = colors.lightGray
 
-local colorMapping = {
+local colorMap = {
 	water = colors.cyan,
 	brine = colors.brown,
 	lithium = colors.yellow,
@@ -33,15 +35,20 @@ local defaultTextColor = colors.black
 local colorlessText = colors.black
 local notConnectedColor = colors.lightGray
 
+local printCategories = true
 local categoryBgColor = colors.gray
 local categoryTextColor = colors.white
 
+-- ======== SETTINGS END ========
 
--- Above are values you can change
-
-local MaxLegendLen = 2
 local uid = "pc" .. math.random(100000000, 999999999)
-local CurLine = 2
+local MaxLegendLen = 2
+local CurLine = 1
+local IsCliMode = not isTransmitter and not isDisplay
+if(IsCliMode) then
+	printVersion = false
+	printCategories = false
+end
 
 local ContentLayout = {
 	{
@@ -57,16 +64,14 @@ local ContentLayout = {
 			"lithium",
 			"tritium production"
 		}
-	},
-	{
+	}, {
 		key = "buffer",
 		text = "Input Buffer",
 		items = {
 			"tritium",
 			"deuterium",
 		}
-	},
-	{
+	}, {
 		key = "fusion",
 		text = "Reactor",
 		items = {
@@ -77,8 +82,7 @@ local ContentLayout = {
 			"steam production",
 			"steam"
 		}
-	},
-	{
+	}, {
 		key = "turbine",
 		text = "Turbine",
 		items = {
@@ -104,17 +108,15 @@ function PadStringR(str, targLen)
 end
 
 function PrepareMonitor(mon)
-	mon.setTextScale(setTextScale)
-
 	if (mon.isColor() == false) then
-		colorMapping.water = colorlessText
-		colorMapping.brine = colorlessText
-		colorMapping.lithium = colorlessText
-		colorMapping.tritium = colorlessText
-		colorMapping.deuterium = colorlessText
-		colorMapping.d_t_fuel = colorlessText
-		colorMapping.steam = colorlessText
-		colorMapping.energy = colorlessText
+		colorMap.water = colorlessText
+		colorMap.brine = colorlessText
+		colorMap.lithium = colorlessText
+		colorMap.tritium = colorlessText
+		colorMap.deuterium = colorlessText
+		colorMap.d_t_fuel = colorlessText
+		colorMap.steam = colorlessText
+		colorMap.energy = colorlessText
 	end
 end
 
@@ -128,31 +130,24 @@ function UpdateTable(timestamp,strName,strCount,strMax,strCategory,strLegend,str
 	if (ContentData[uid][timestamp] == nil) then
 		ContentData[uid][timestamp] = {}
 	end
-
 	if (ContentData[uid][timestamp][strCategory] == nil) then
 		ContentData[uid][timestamp][strCategory] = {}
 	end
-
 	if (ContentData[uid][timestamp][strCategory][strName] == nil) then
 		ContentData[uid][timestamp][strCategory][strName] = {}
 	end
-
 	if (ContentData[uid][timestamp][strCategory][strName]["count"] == nil) then
 		ContentData[uid][timestamp][strCategory][strName]["count"] = strCount
 	else
 		ContentData[uid][timestamp][strCategory][strName]["count"] = ContentData[uid][timestamp][strCategory][strName]["count"] + strCount
 	end
-
 	if (ContentData[uid][timestamp][strCategory][strName]["max"] == nil) then
 		ContentData[uid][timestamp][strCategory][strName]["max"] = strMax
 	else
 		ContentData[uid][timestamp][strCategory][strName]["max"] = ContentData[uid][timestamp][strCategory][strName]["max"] + strMax
 	end
-
 	ContentData[uid][timestamp][strCategory][strName]["legend"] = strLegend
 	ContentData[uid][timestamp][strCategory][strName]["color"] = strColor
-
-	--print("UpdateTable: " .. strName .. ", " .. strCount .. "/" .. strMax .. ", #" .. strCategory .. ", l=" .. strLegend)
 end
 
 function WriteMonitorCenter(mon, text, y)
@@ -170,7 +165,6 @@ function PrintMonitorCategory(mon, category)
 	WriteMonitorCenter(mon, category, CurLine)
 	CurLine = CurLine + 1
 end
-
 
 function PrintMonitorCategoryEmpty(mon)
 	mon.setBackgroundColor(backgroundColor)
@@ -228,17 +222,14 @@ function PrintMonitorStat(mon, strName, strAmount, strMax, strLegend, barColor)
 	else
 		-- bar is empty -> only text
 		mon.setBackgroundColor(backgroundColor)
-		if(strMax > 0) then
-		else
+		if(strMax <= 0) then
 			mon.setTextColor(notConnectedColor)
 		end
 	end
-
 	if (string.len(line) > barlength) then
 		-- bar is not filled completely -> split on fill level
 		local msg = string.sub(line,1,barlength)
 		mon.write(msg)
-
 		mon.setBackgroundColor(backgroundColor)
 		mon.setTextColor(defaultTextColor)
 		mon.write(string.sub(line,barlength+1))
@@ -248,56 +239,49 @@ function PrintMonitorStat(mon, strName, strAmount, strMax, strLegend, barColor)
 		mon.write(line)
 		mon.write(string.rep(" ",spaces))
 	end
-
-	--mon.setTextColor(colors.white)
 	CurLine = CurLine + 1
 end
 
--- Find a monitor & prepare it
 function GetMonitor()
 	local mon = peripheral.find("monitor")
 	if not mon then
 		error("No monitor found")
 	end
-
-	PrepareMonitor(mon)
+	mon.setTextScale(setTextScale)
 	return mon;
 end
 
--- Find a wireless modem
 function GetWirelessModem()
 	local mod = peripheral.find("modem", function(name, object) return object.isWireless() end);
 	if mod == nil then
 		error("No Wireless modem found")
 	end
-
 	mod.closeAll()
 	return mod;
 end
 
 function GetColorForFluidName(fluidName)
 	if(string.find(fluidName, "water")) then
-		return colorMapping.water
+		return colorMap.water
 	end
 	if(string.find(fluidName, "brine")) then
-		return colorMapping.brine
+		return colorMap.brine
 	end
 	if(string.find(fluidName, "lithium")) then
-		return colorMapping.lithium
+		return colorMap.lithium
 	end
 	if(string.find(fluidName, "tritium")) then
-		return colorMapping.tritium
+		return colorMap.tritium
 	end
 	if(string.find(fluidName, "deuterium")) then
-		return colorMapping.deuterium
+		return colorMap.deuterium
 	end
 	if(string.find(fluidName, "d-t fuel")) then
-		return colorMapping.d_t_fuel
+		return colorMap.d_t_fuel
 	end
 	if(string.find(fluidName, "steam")) then
-		return colorMapping.steam
+		return colorMap.steam
 	end
-
 	return notConnectedColor; -- TODO separate fallback ?
 end
 
@@ -313,7 +297,7 @@ function StripItemName(strName)
 end
 
 function CollectLocalData()
-	PrintTerminalBottom("Collecing data.");
+	PrintTermBottom("Collecing data.");
 	local timestamp = os.epoch("local");
 
 	local peripherals = peripheral.getNames()
@@ -322,11 +306,10 @@ function CollectLocalData()
 		local pType = peripheral.getType(name);
 
 		if (p.getBlockData ~= nil) then
-			PrintTerminalBottom(i .. ": Processing Advanced Peripherals");
+			PrintTermBottom(i .. ": Processing Advanced Peripherals");
 			local blockdata = p.getBlockData();
-
 			if (blockdata.GasTanks) then
-				PrintTerminalBottom(i .. ": Processing Gas Storage via Advanced Peripherals");
+				PrintTermBottom(i .. ": Processing Gas Storage via Advanced Peripherals");
 				local itemData = {};
 				for j in pairs(blockdata.GasTanks) do
 					local iteminfo = blockdata.GasTanks[j];
@@ -357,7 +340,7 @@ function CollectLocalData()
 			end
 
 			if (blockdata.FluidTanks) then
-				PrintTerminalBottom(i .. ": Processing Fluid Storage via Advanced Peripherals");
+				PrintTermBottom(i .. ": Processing Fluid Storage via Advanced Peripherals");
 				local itemData = {};
 				for j in pairs(blockdata.FluidTanks) do
 					local iteminfo = blockdata.FluidTanks[j];
@@ -389,7 +372,7 @@ function CollectLocalData()
 		end
 
 		if string.match(pType, "ChemicalTank") then
-			PrintTerminalBottom(i .. ": Processing Chemical Tank");
+			PrintTermBottom(i .. ": Processing Chemical Tank");
 			local category = "buffer"
 			-- Content (sum)
 			if(p.getStored ~= nil and p.getCapacity ~= nil) then
@@ -404,7 +387,7 @@ function CollectLocalData()
 
 		--  Evaporation Plant
 		if (pType == "thermalEvaporationValve") then
-			PrintTerminalBottom(i .. ": Processing Thermal Evaporation Plant Valve");
+			PrintTermBottom(i .. ": Processing Thermal Evaporation Plant Valve");
 			local category = "tritium"
 			-- Input (sum)
 			if(p.getInput ~= nil and p.getInputCapacity  ~= nil) then
@@ -463,7 +446,7 @@ function CollectLocalData()
 
 		-- Solar Neutron Activator
 		if (pType == "solarNeutronActivator") then
-			PrintTerminalBottom(i .. ": Processing Solar Neutron Activator");
+			PrintTermBottom(i .. ": Processing Solar Neutron Activator");
 			local category = "tritium"
 			-- Input (sum)
 			if(p.getInput ~= nil and p.getInputCapacity  ~= nil) then
@@ -511,24 +494,24 @@ function CollectLocalData()
 
 
 		if (pType == "fusionReactorLogicAdapter") then
-			PrintTerminalBottom(i .. ": Processing Fusion Reactor Logic Adapter");
+			PrintTermBottom(i .. ": Processing Fusion Reactor Logic Adapter");
 			local category = "fusion";
 			if(p.getDTFuel ~= nil) then
 				local dtFuelData = p.getDTFuel();
 				if (dtFuelData ~= nil) then
-					UpdateTable(timestamp, "d-t fuel", dtFuelData.amount/1000, 1, category, "b", colorMapping.d_t_fuel);
+					UpdateTable(timestamp, "d-t fuel", dtFuelData.amount/1000, 1, category, "b", colorMap.d_t_fuel);
 				end
 			end
 			if (p.getInjectionRate ~= nil) then
 				local injectionRate = p.getInjectionRate();
 				if (injectionRate ~= nil) then
-					UpdateTable(timestamp, "injection rate", injectionRate/1000, 99/1000, category, "b", colorMapping.d_t_fuel);
+					UpdateTable(timestamp, "injection rate", injectionRate/1000, 99/1000, category, "b", colorMap.d_t_fuel);
 				end
 			end
 			if (p.getProductionRate ~= nil) then
 				local productionRate = p.getProductionRate();
 				if (productionRate ~= nil) then
-					UpdateTable(timestamp, "steam production", productionRate/1000, productionRate/1000, category, "b", colorMapping.steam);
+					UpdateTable(timestamp, "steam production", productionRate/1000, productionRate/1000, category, "b", colorMap.steam);
 				end
 			end
 			if(p.getSteam ~= nil and p.getSteamCapacity  ~= nil) then
@@ -539,7 +522,7 @@ function CollectLocalData()
 					steamAmount = steam.amount
 				end
 				if(steamAmount ~= nil and steamCapacity ~= nil) then
-					UpdateTable(timestamp, "steam", steamAmount/1000, steamCapacity/1000, category, "b", colorMapping.steam);
+					UpdateTable(timestamp, "steam", steamAmount/1000, steamCapacity/1000, category, "b", colorMap.steam);
 				end
 			end
 			if(p.getWater ~= nil and p.getWaterCapacity  ~= nil) then
@@ -550,7 +533,7 @@ function CollectLocalData()
 					waterAmount = water.amount
 				end
 				if(waterAmount ~= nil and waterCapacity ~= nil) then
-					UpdateTable(timestamp, "water", waterAmount/1000, waterCapacity/1000, category, "b", colorMapping.water);
+					UpdateTable(timestamp, "water", waterAmount/1000, waterCapacity/1000, category, "b", colorMap.water);
 				end
 			end
 			if(p.getDeuterium ~= nil and p.getDeuteriumCapacity  ~= nil) then
@@ -561,7 +544,7 @@ function CollectLocalData()
 					deuteriumAmount = deuterium.amount
 				end
 				if(deuteriumAmount ~= nil and deuteriumCapacity ~= nil) then
-					UpdateTable(timestamp, "deuterium", deuteriumAmount/1000, deuteriumCapacity/1000, "buffer", "b", colorMapping.deuterium);
+					UpdateTable(timestamp, "deuterium", deuteriumAmount/1000, deuteriumCapacity/1000, "buffer", "b", colorMap.deuterium);
 				end
 			end
 			if(p.getTritium ~= nil and p.getTritiumCapacity ~= nil) then
@@ -572,33 +555,33 @@ function CollectLocalData()
 					tritiumAmount = tritium.amount
 				end
 				if(tritiumAmount ~= nil and tritiumCapacity ~= nil) then
-					UpdateTable(timestamp, "tritium", tritiumAmount/1000, tritiumCapacity/1000, "buffer", "b", colorMapping.tritium);
+					UpdateTable(timestamp, "tritium", tritiumAmount/1000, tritiumCapacity/1000, "buffer", "b", colorMap.tritium);
 				end
 			end
 		end
 
 		if(pType == "fusionReactorPort") then
-			PrintTerminalBottom(i .. ": Processing Fusion Reactor Port");
+			PrintTermBottom(i .. ": Processing Fusion Reactor Port");
 			local category = "fusion";
 
 			if (p.getEnergy ~= nil and p.getMaxEnergy ~= nil) then
 				local energy = p.getEnergy();
 				local maxEnergy = p.getMaxEnergy();
 				if(energy ~= nil and maxEnergy ~= nil) then
-					UpdateTable(timestamp, "energy", energy, maxEnergy, category, "FE", colorMapping.energy);
+					UpdateTable(timestamp, "energy", energy, maxEnergy, category, "FE", colorMap.energy);
 				end
 			end
 		end
 
 		if (pType == "turbineValve") then
 			local category = "turbine";
-			PrintTerminalBottom(i .. ": Processing Steam Turbine");
+			PrintTermBottom(i .. ": Processing Steam Turbine");
 
 			if(p.getFlowRate ~= nil and p.getMaxFlowRate ~= nil) then
 				local turbineFlowRate = p.getFlowRate();
 				local maxFlowRate = p.getMaxFlowRate();
 				if (turbineFlowRate ~= nil and maxFlowRate ~= nil) then
-					UpdateTable(timestamp,"steam flow rate", turbineFlowRate/1000, maxFlowRate/1000, category, "b", colorMapping.steam);
+					UpdateTable(timestamp,"steam flow rate", turbineFlowRate/1000, maxFlowRate/1000, category, "b", colorMap.steam);
 				end
 			end
 
@@ -610,7 +593,7 @@ function CollectLocalData()
 					steamAmount = steam.amount
 				end
 				if(steamAmount ~= nil and steamCapacity ~= nil) then
-					UpdateTable(timestamp, "steam", steamAmount/1000, steamCapacity/1000, category, "b", colorMapping.steam);
+					UpdateTable(timestamp, "steam", steamAmount/1000, steamCapacity/1000, category, "b", colorMap.steam);
 				end
 			end
 
@@ -618,7 +601,7 @@ function CollectLocalData()
 				local productionRate = p.getProductionRate();
 				local maxProduction = p.getMaxProduction();
 				if (productionRate ~= nil and maxProduction ~= nil) then
-					UpdateTable(timestamp,"energy production", productionRate, maxProduction, category, "FE", colorMapping.energy);
+					UpdateTable(timestamp,"energy production", productionRate, maxProduction, category, "FE", colorMap.energy);
 				end
 			end
 
@@ -626,28 +609,32 @@ function CollectLocalData()
 				local energy = p.getEnergy();
 				local maxEnergy = p.getMaxEnergy();
 				if(energy ~= nil and maxEnergy ~= nil) then
-					UpdateTable(timestamp, "energy", energy, maxEnergy, category, "FE", colorMapping.energy);
+					UpdateTable(timestamp, "energy", energy, maxEnergy, category, "FE", colorMap.energy);
 				end
 			end
 		end
 	end
-
 end
 
 function UpdateMonitor(mon, stateChar)
-	PrintTerminalBottom("Updating monitor.");
+	PrintTermBottom("Updating monitor.");
 
 	mon.setBackgroundColor(backgroundColor)
 	mon.clear()
-	mon.setTextColor(colors.white)
-	WriteMonitorCenter(mon, stateChar .. " " .. VersionInfo .. " " .. stateChar, 1)
-	CurLine = 2
+	CurLine = 1
+	if(printVersion) then
+		mon.setTextColor(colors.white)
+		WriteMonitorCenter(mon, stateChar .. " " .. VersionInfo .. " " .. stateChar, 1)
+		CurLine = 2
+	end
 
 	-- process categories and items downward, skipping empty ones.
 	for i,layout in pairs(ContentLayout) do
 		local strCategory = layout.key;
 		local printedItems = false;
-		PrintMonitorCategory(mon, layout.text)
+		if(printCategories) then
+			PrintMonitorCategory(mon, layout.text)
+		end
 		for j,strName in pairs(layout.items) do
 
 			local legend = nil
@@ -686,13 +673,13 @@ function UpdateMonitor(mon, stateChar)
 			end
 		end
 
-		if(not printedItems) then
+		if(not printedItems and not IsCliMode) then
 			PrintMonitorCategoryEmpty(mon)
 		end
 	end
 end
 
-function PrintTerminalCenter(text, y)
+function PrintTermCenter(text, y)
 	local TermWidth, _ = term.getSize() -- Get the width of the monitor
 	term.setCursorPos(1, y)
 	term.write(string.rep(" ", TermWidth)) -- do a extra fill-pass
@@ -700,13 +687,15 @@ function PrintTerminalCenter(text, y)
 	term.write(text)
 end
 
-function PrintTerminalBottom(text)
+function PrintTermBottom(text)
+	if(IsCliMode) then
+		return -- dont print update msgs in cli mode
+	end
 	local TermWidth, TermHeight = term.getSize()
-	term.setCursorPos(1, TermHeight - 1)
-	term.write(string.rep(" ", TermWidth)) -- do a extra fill-pass
-	term.setCursorPos(1, TermHeight - 1)
-	term.write("> " .. text)
 	term.setCursorPos(1, TermHeight)
+	term.write(string.rep(" ", TermWidth)) -- do a extra fill-pass
+	term.setCursorPos(1, TermHeight)
+	term.write("> " .. text)
 end
 
 function GetTableSize(t)
@@ -717,7 +706,7 @@ function GetTableSize(t)
 	return count
 end
 
-function CheckRequiredMonitorSize(mon)
+function CheckMonitorSize(mon)
 	local dataLen = 10
 	local longestLine = dataLen
 	local lineCount = 1
@@ -744,13 +733,16 @@ function CheckRequiredMonitorSize(mon)
 	end
 end
 
--- This is the main section of the script
+-- ======== MAIN SECTION ========
 
 print("Starting: " .. VersionInfo);
 print("UID:      " .. uid);
 
-if(not isTransmitter and not isDisplay) then
-	error("Not a Transmitter and not a Monitor -> nothing to do.")
+if(IsCliMode) then
+	print("Not a Transmitter and not a Monitor.")
+	print("Running in CLI mode.")
+	sleep(5)
+	CheckMonitorSize(term)
 end
 
 local monitor = nil;
@@ -759,9 +751,10 @@ local peripherals = nil;
 
 function ConfigurePeripherals(checkSize)
 	if(isDisplay) then
-		monitor = GetMonitor();
+		monitor = GetMonitor()
+		PrepareMonitor(monitor)
 		if(checkSize ~= nil) then
-			CheckRequiredMonitorSize(monitor)
+			CheckMonitorSize(monitor)
 		end
 	end
 	if(isReceiver or isTransmitter) then
@@ -770,18 +763,20 @@ function ConfigurePeripherals(checkSize)
 	end
 
 	peripherals = peripheral.getNames()
-	term.clear()
-	term.setCursorPos(1,1)
-	PrintTerminalCenter("Running " .. VersionInfo, 1)
-	term.setCursorPos(1,3)
-	print("Is Display:   " .. tostring(isDisplay))
-	print("Is Sender:    " .. tostring(isTransmitter))
-	print("Is Receiver:  " .. tostring(isReceiver))
-	print("Channel:      " .. wirelessChannel)
-	print("Peripherals:  " .. #peripherals)
-	print("Data sources: " .. (GetTableSize(ContentData)))
-	print("Heartbeat:    ")
-	PrintTerminalBottom("Updated peripherals.")
+	if(not IsCliMode) then
+		term.clear()
+		term.setCursorPos(1,1)
+		PrintTermCenter("Running " .. VersionInfo, 1)
+		term.setCursorPos(1,3)
+		print("Is Display:   " .. tostring(isDisplay))
+		print("Is Sender:    " .. tostring(isTransmitter))
+		print("Is Receiver:  " .. tostring(isReceiver))
+		print("Channel:      " .. wirelessChannel)
+		print("Peripherals:  " .. #peripherals)
+		print("Data sources: " .. (GetTableSize(ContentData)))
+		print("Heartbeat:    ")
+		PrintTermBottom("Updated peripherals.")
+	end
 end
 
 ConfigurePeripherals(true);
@@ -789,10 +784,14 @@ ConfigurePeripherals(true);
 -- Perform Initial Collection and Update the Monitor if given
 if monitor then
 	UpdateMonitor(monitor, "+");
+elseif IsCliMode then
+	UpdateMonitor(term, "+")
 end
 CollectLocalData();
 if monitor then
 	UpdateMonitor(monitor, "#");
+elseif IsCliMode then
+	UpdateMonitor(term, "+")
 end
 
 local timerUpdate = os.startTimer(UpdateIntervalSeconds);
@@ -806,8 +805,10 @@ while true do
 		heartChar = "+"
 	end
 	heartbeat = not heartbeat
-	term.setCursorPos(15,9)
-	term.write(heartChar)
+	if(not IsCliMode) then
+		term.setCursorPos(15,9)
+		term.write(heartChar)
+	end
 
 	local event, param1, param2, param3, param4, param5 = os.pullEvent();
 	if (event == "timer") then
@@ -816,11 +817,13 @@ while true do
 			if (modem) then
 				if (isTransmitter) then
 					modem.transmit(wirelessChannel,1,ContentData);
-					PrintTerminalBottom("Transmitted data.")
+					PrintTermBottom("Transmitted data.")
 				end
 			end
 			if monitor then
 				UpdateMonitor(monitor, heartChar);
+			elseif IsCliMode then
+				UpdateMonitor(term, heartChar)
 			end
 			wirelessEventCount = 0;
 			timerUpdate = os.startTimer(UpdateIntervalSeconds);
@@ -837,7 +840,7 @@ while true do
 					if (isNew) then
 						ConfigurePeripherals()
 					end
-					PrintTerminalBottom("Received data from: "..extId);
+					PrintTermBottom("Received data from: "..extId);
 				end
 			end
 			if (wirelessEventCount >= 10) then
@@ -848,21 +851,21 @@ while true do
 
 	if (event == "monitor_touch") or (event == "monitor_resize") then
 		if monitor then
-			PrintTerminalBottom("Updating monitor.");
+			PrintTermBottom("Updating monitor.");
 			UpdateMonitor(monitor, heartChar);
+		elseif IsCliMode then
+			UpdateMonitor(term, heartChar)
 		end
 	end
 
 	if (event == "peripheral") or (event == "peripheral_detach") then
-		PrintTerminalBottom("Updating peripherals.");
+		PrintTermBottom("Updating peripherals.");
 		ConfigurePeripherals();
 	end
-
 
 	-- remove old data
 	if(ContentData ~= nil) then
 		local removeBefore = (os.epoch("local") / 1000) - RemoveOldDataAfterSec
-
 		for id in pairs(ContentData) do
 			local sortedTimestamps = {}
 			for timestamp in pairs(ContentData[id]) do
@@ -885,6 +888,5 @@ while true do
 				ContentData[id] = nil -- device has no data
 			end
 		end
-
 	end
 end
