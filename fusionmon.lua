@@ -5,7 +5,8 @@
 -- ======== SETTINGS START ========
 
 local Settings = {
-	UpdateInterval = 3,
+	UID = "fm" .. math.random(100000, 999999),
+	UpdateInterval = 2,
 	DeviceTimeout = 120,
 
 	IsDisplay = true,
@@ -18,8 +19,8 @@ local Settings = {
 	PrintCategories = true,
 	CategoryPadding = 0,
 
-	PrintVersion = true,
-	VersionInfo = "Craftana - Fusion Dashboard"
+	PrintTitle = true,
+	TitleText = "Craftana - Fusion Dashboard"
 }
 
 local ColorMap = {
@@ -51,14 +52,14 @@ if(pocket) then -- force it, nothing else makes sense on pocket
 end
 
 local Const = {
-	Uid = "pc" .. math.random(100000000, 999999999),
+	SendAllData = false,
 	MaxLegend = 2,
 	CurLine = 1,
 	IsCliMode = not Settings.IsTransmitter and not Settings.IsDisplay
 }
 
 if(Const.IsCliMode) then
-	Settings.PrintVersion = false
+	Settings.PrintTitle = false
 	Settings.PrintCategories = false
 end
 
@@ -108,6 +109,10 @@ local ContentLayout = {
 
 local ContentData = {}
 
+local outDevice = nil
+local modem = nil
+local peripherals = nil
+local heartbeat = true
 
 -- ==== Utility Functions ====
 
@@ -167,24 +172,23 @@ function GetMappedColorForName(fluidName)
 	return ColorMap.notConnected -- TODO separate fallback ?
 end
 
-function WriteMonitorCenter(mon, text, y)
-	local ScreenWidth, _ = mon.getSize() -- Get the width of the monitor
-	mon.setCursorPos(1, y)
-	mon.write(string.rep(" ", ScreenWidth)) -- do a fill-pass
-	mon.setCursorPos(math.floor((ScreenWidth-#text)/2), y) -- now write text to center
-	mon.write(text)
+function WriteDeviceCenter(monOrTerm, text, y)
+	local deviceWidth, _ = monOrTerm.getSize()
+	monOrTerm.setCursorPos(1, y)
+	monOrTerm.write(string.rep(" ", deviceWidth)) -- do a fill-pass
+	monOrTerm.setCursorPos(math.floor((deviceWidth-#text)/2), y) -- now write text to center
+	monOrTerm.write(text)
 end
 
-
-function WriteMonitorBottom(mon, text)
+function PrintTermBtm(text)
 	if(Const.IsCliMode) then
 		return -- dont print update msgs in cli mode
 	end
-	local TermWidth, TermHeight = mon.getSize()
-	mon.setCursorPos(1, TermHeight)
-	mon.write(string.rep(" ", TermWidth)) -- do a extra fill-pass
-	mon.setCursorPos(1, TermHeight)
-	mon.write("> " .. text)
+	local TermWidth, TermHeight = term.getSize()
+	term.setCursorPos(1, TermHeight)
+	term.write(string.rep(" ", TermWidth)) -- do a fill-pass
+	term.setCursorPos(1, TermHeight)
+	term.write("> " .. text)
 end
 
 
@@ -192,7 +196,7 @@ end
 
 
 function UpdateTable(timestamp,strName,strCount,strMax,strCategory,strLegend,strColor)
-	local uid = Const.Uid -- local ist faster
+	local uid = Settings.UID -- local ist faster
 	if (ContentData == nil) then
 		ContentData = {}
 	end
@@ -224,10 +228,10 @@ end
 
 
 function ProcessAdvancedPeripherals(timestamp, i, p)
-	WriteMonitorBottom(i .. ": Processing Advanced Peripherals")
+	PrintTermBtm(i .. ": Processing Advanced Peripherals")
 	local blockdata = p.getBlockData()
 	if (blockdata.GasTanks) then
-		WriteMonitorBottom(i .. ": Processing Gas Storage via Advanced Peripherals")
+		PrintTermBtm(i .. ": Processing Gas Storage via Advanced Peripherals")
 		local itemData = {}
 		for j in pairs(blockdata.GasTanks) do
 			local iteminfo = blockdata.GasTanks[j]
@@ -258,7 +262,7 @@ function ProcessAdvancedPeripherals(timestamp, i, p)
 	end
 
 	if (blockdata.FluidTanks) then
-		WriteMonitorBottom(i .. ": Processing Fluid Storage via Advanced Peripherals")
+		PrintTermBtm(i .. ": Processing Fluid Storage via Advanced Peripherals")
 		local itemData = {}
 		for j in pairs(blockdata.FluidTanks) do
 			local iteminfo = blockdata.FluidTanks[j]
@@ -291,7 +295,7 @@ end
 
 
 function ProcessChemTank(timestamp, i, p)
-	WriteMonitorBottom(i .. ": Processing Chemical Tank")
+	PrintTermBtm(i .. ": Processing Chemical Tank")
 	local category = "buffer"
 	-- Content (sum)
 	if(p.getStored ~= nil and p.getCapacity ~= nil) then
@@ -305,7 +309,7 @@ function ProcessChemTank(timestamp, i, p)
 end
 
 function ProcessTEP(timestamp, i, p)
-	WriteMonitorBottom(i .. ": Processing Thermal Evaporation Plant Valve")
+	PrintTermBtm(i .. ": Processing Thermal Evaporation Plant Valve")
 	local category = "tritium"
 	-- Input (sum)
 	if(p.getInput ~= nil and p.getInputCapacity  ~= nil) then
@@ -363,7 +367,7 @@ function ProcessTEP(timestamp, i, p)
 end
 
 function ProcessSNA(timestamp, i, p)
-	WriteMonitorBottom(i .. ": Processing Solar Neutron Activator")
+	PrintTermBtm(i .. ": Processing Solar Neutron Activator")
 	local category = "tritium"
 	-- Input (sum)
 	if(p.getInput ~= nil and p.getInputCapacity  ~= nil) then
@@ -410,7 +414,7 @@ function ProcessSNA(timestamp, i, p)
 end
 
 function ProcessFusionLogic(timestamp, i, p)
-	WriteMonitorBottom(i .. ": Processing Fusion Reactor Logic Adapter")
+	PrintTermBtm(i .. ": Processing Fusion Reactor Logic Adapter")
 	local category = "fusion"
 	if(p.getDTFuel ~= nil) then
 		local dtFuelData = p.getDTFuel()
@@ -477,7 +481,7 @@ function ProcessFusionLogic(timestamp, i, p)
 end
 
 function ProcessFusionPort(timestamp, i, p)
-	WriteMonitorBottom(i .. ": Processing Fusion Reactor Port")
+	PrintTermBtm(i .. ": Processing Fusion Reactor Port")
 	local category = "fusion"
 
 	if (p.getEnergy ~= nil and p.getMaxEnergy ~= nil) then
@@ -490,7 +494,7 @@ function ProcessFusionPort(timestamp, i, p)
 end
 
 function ProcessTurbine(timestamp, i, p)
-	WriteMonitorBottom(i .. ": Processing Steam Turbine")
+	PrintTermBtm(i .. ": Processing Steam Turbine")
 	local category = "turbine"
 
 	if(p.getFlowRate ~= nil and p.getMaxFlowRate ~= nil) then
@@ -530,14 +534,14 @@ function ProcessTurbine(timestamp, i, p)
 	end
 end
 
-function CollectLocalData()
-	WriteMonitorBottom("Collecing data.")
-	local timestamp = os.epoch("local")
 
-	local peripherals = peripheral.getNames()
-	for i,name in pairs(peripherals) do
-		local p = peripheral.wrap(name)
-		local pType = peripheral.getType(name)
+-- Function to process a chunk of peripherals
+function ProcessPeripheralChunk(chunk, offset)
+    local timestamp = os.epoch("local")
+    for j, name in pairs(chunk) do
+		local i = offset + j
+        local p = peripheral.wrap(name)
+        local pType = peripheral.getType(name)
 
 		if (p.getBlockData ~= nil) then
 			ProcessAdvancedPeripherals(timestamp, i, p)
@@ -555,9 +559,49 @@ function CollectLocalData()
 			ProcessFusionPort(timestamp, i, p)
 		elseif(pType == "turbineValve") then
 			ProcessTurbine(timestamp, i, p)
-		else
-			WriteMonitorBottom(i .. "Unknown: " .. name)
+		elseif(pType ~= "modem" and pType ~= "monitor") then
+			PrintTermBtm(i .. " Unknown: " .. name)
 		end
+    end
+end
+
+function SplitList(list, chunkSize)
+    local chunks = {}
+    for i = 1, #list, chunkSize do
+        local chunk = {}
+        for j = i, math.min(i + chunkSize - 1, #list) do
+            table.insert(chunk, list[j])
+        end
+        table.insert(chunks, chunk)
+    end
+    return chunks
+end
+
+function CollectLocalData()
+
+	local peripheralsPerTask = 10
+	-- calculate the desired amount of threads, up to max 5
+	local chunkCount = math.min(5, math.ceil(#peripherals / peripheralsPerTask))
+
+	if(chunkCount > 1) then
+		PrintTermBtm("Collecting data. (" .. chunkCount .. " threads)")
+		local chunkSize = math.ceil(#peripherals / chunkCount)
+		local chunks = SplitList(peripherals, chunkSize)
+
+		-- Create a task for each chunk
+		local tasks = {}
+		local offset = 0
+		for _, chunk in ipairs(chunks) do
+			table.insert(tasks, function() ProcessPeripheralChunk(chunk, offset) end)
+			offset = offset + #chunk
+		end
+
+		-- Run the tasks in parallel
+		parallel.waitForAll(table.unpack(tasks))
+	else
+		PrintTermBtm("Collecting data. (1 thread)")
+		-- If there are fewer than 10 peripherals, process them in current task
+        ProcessPeripheralChunk(peripherals, 0)
 	end
 end
 
@@ -628,14 +672,14 @@ function PrintMonitorCategory(mon, category)
 	CurLine = CurLine + Settings.CategoryPadding
 	mon.setBackgroundColor(ColorMap.categoryBg)
 	mon.setTextColor(ColorMap.categoryTxt)
-	WriteMonitorCenter(mon, category, CurLine)
+	WriteDeviceCenter(mon, category, CurLine)
 	CurLine = CurLine + 1
 end
 
 function PrintMonitorCategoryEmpty(mon)
 	mon.setBackgroundColor(ColorMap.background)
 	mon.setTextColor(ColorMap.categoryBg)
-	WriteMonitorCenter(mon, "- no devices -", CurLine)
+	WriteDeviceCenter(mon, "- no devices -", CurLine)
 	CurLine = CurLine + 1
 end
 
@@ -712,17 +756,22 @@ end
 -- ==== Main Program Logic ====
 
 
-function UpdateMonitor(mon, stateChar)
-	WriteMonitorBottom("Updating monitor.")
+function UpdateMonitor(mon)
+	PrintTermBtm("Updating monitor.")
+	local heartChar = "#"
+	if(heartbeat) then
+		heartChar = "+"
+	end
+	heartbeat = not heartbeat
 
 	mon.setBackgroundColor(ColorMap.background)
 	mon.clear()
 	CurLine = 1
 
 	local sett = Settings
-	if(sett.PrintVersion) then
+	if(sett.PrintTitle) then
 		mon.setTextColor(colors.white)
-		WriteMonitorCenter(mon, stateChar .. " " .. sett.VersionInfo .. " " .. stateChar, 1)
+		WriteDeviceCenter(mon, heartChar .. " " .. sett.TitleText .. " " .. heartChar, 1)
 		CurLine = 2
 	end
 
@@ -781,9 +830,6 @@ end
 
 -- ======== MAIN SECTION ========
 
-local outDevice = nil
-local modem = nil
-local peripherals = nil
 
 function ConfigurePeripherals(checkSize)
 	local sett = Settings
@@ -805,16 +851,16 @@ function ConfigurePeripherals(checkSize)
 	if(not Const.IsCliMode) then
 		term.clear()
 		term.setCursorPos(1,1)
-		WriteMonitorCenter(term, "Running " .. sett.VersionInfo, 1)
+		WriteDeviceCenter(term, "Running " .. sett.TitleText, 1)
 		term.setCursorPos(1,3)
+		print("Device UID:   " .. Settings.UID)
 		print("Is Display:   " .. tostring(sett.IsDisplay))
 		print("Is Sender:    " .. tostring(sett.IsTransmitter))
 		print("Is Receiver:  " .. tostring(sett.IsReceiver))
 		print("Channel:      " .. sett.WirelessChannel)
 		print("Peripherals:  " .. #peripherals)
 		print("Data sources: " .. (GetTableSize(ContentData)))
-		print("Heartbeat:    ")
-		WriteMonitorBottom("Updated peripherals.")
+		PrintTermBtm("Updated peripherals.")
 	end
 end
 
@@ -823,31 +869,26 @@ function MainLoop()
 	local sett = Settings
 	local timerUpdate = os.startTimer(sett.UpdateInterval)
 	local wirelessEventCount = 0
-	local heartbeat = true
 
 	while true do
-		local heartChar = "#"
-		if(heartbeat) then
-			heartChar = "+"
-		end
-		heartbeat = not heartbeat
-		if(not Const.IsCliMode) then
-			term.setCursorPos(15,9)
-			term.write(heartChar)
-		end
-
 		local event, param1, param2, param3, param4, param5 = os.pullEvent()
 		if (event == "timer") then
 			if (param1 == timerUpdate) then
 				CollectLocalData()
 				if (modem) then
 					if (sett.IsTransmitter) then
-						modem.transmit(sett.WirelessChannel,1,ContentData)
-						WriteMonitorBottom("Transmitted data.")
+						local sendData = {}
+						if(Const.SendAllData) then
+							sendData = ContentData
+						else
+							sendData[Settings.UID] = ContentData[Settings.UID]
+						end
+						modem.transmit(sett.WirelessChannel,1,sendData)
+						PrintTermBtm("Transmitted data.")
 					end
 				end
 				if outDevice then
-					UpdateMonitor(outDevice, heartChar)
+					UpdateMonitor(outDevice)
 				end
 				wirelessEventCount = 0
 				timerUpdate = os.startTimer(sett.UpdateInterval)
@@ -859,12 +900,12 @@ function MainLoop()
 				wirelessEventCount = wirelessEventCount + 1
 				for extId,data in pairs(param4) do
 					local isNew = ContentData[extId] ~= nil
-					if (extId ~= Const.Uid and data ~= nil) then
+					if (extId ~= Settings.UID and data ~= nil) then
 						ContentData[extId] = data
 						if (isNew) then
 							ConfigurePeripherals()
 						end
-						WriteMonitorBottom("Received data from: "..extId)
+						PrintTermBtm("Received data from: "..extId)
 					end
 				end
 				if (wirelessEventCount >= 10) then
@@ -875,13 +916,13 @@ function MainLoop()
 
 		if (event == "monitor_touch") or (event == "monitor_resize") then
 			if outDevice then
-				WriteMonitorBottom("Updating monitor.")
-				UpdateMonitor(outDevice, heartChar)
+				PrintTermBtm("Updating monitor.")
+				UpdateMonitor(outDevice)
 			end
 		end
 
 		if (event == "peripheral") or (event == "peripheral_detach") then
-			WriteMonitorBottom("Updating peripherals.")
+			PrintTermBtm("Updating peripherals.")
 			ConfigurePeripherals()
 		end
 
@@ -916,8 +957,8 @@ end
 
 
 function Main()
-	print("Starting: " .. Settings.VersionInfo)
-	print("UID:      " .. Const.Uid)
+	print("Starting: " .. Settings.TitleText)
+	print("UID:      " .. Settings.UID)
 
 	if(Const.IsCliMode) then
 		print("Not a Transmitter or Monitor.")
@@ -930,11 +971,11 @@ function Main()
 
 	-- Perform Initial Collection and Update the Monitor if given
 	if outDevice then
-		UpdateMonitor(outDevice, "+")
+		UpdateMonitor(outDevice)
 	end
 	CollectLocalData()
 	if outDevice then
-		UpdateMonitor(outDevice, "#")
+		UpdateMonitor(outDevice)
 	end
 
 	-- go into run loop
