@@ -33,6 +33,7 @@ local ColorMap = {
 	categoryTxt = colors.white,
 
 	water = colors.cyan,
+	heat = colors.magenta,
 	brine = colors.brown,
 	lithium = colors.yellow,
 	tritium = colors.green,
@@ -42,6 +43,13 @@ local ColorMap = {
 	energy = colors.orange
 }
 
+local GrafanSettings = {
+	enabled = false,
+	jobname = "fusion9001", -- see Readme
+ 	pushgatewayUrl = "https://push.gateway.site", -- see Readme
+ 	basicAuthHeader = "XXXXXXXXXXXXXXXXXXXX==", -- base64(username:password)
+	prometheusPrefix = "minecraft_" -- <prefix><category>_<name>(_[max|devices])
+}
 
 -- ======== SETTINGS END ========
 
@@ -53,7 +61,6 @@ end
 
 local Const = {
 	SendAllData = false,
-	MaxLegend = 2,
 	CurLine = 1,
 	IsCliMode = not Settings.IsTransmitter and not Settings.IsDisplay
 }
@@ -91,6 +98,8 @@ local ContentLayout = {
 			"water",
 			"injection rate",
 			"d-t fuel",
+			"plasma temperature",
+			"case temperature",
 			"energy",
 			"steam production",
 			"steam"
@@ -349,7 +358,7 @@ function ProcessTEP(timestamp, p)
 				local temperature = p.getTemperature()
 				local tempCapacity = 3000 -- TODO exact limit needed depends on height? and fluid???
 				if(temperature ~= nil and tempCapacity ~= nil) then
-					UpdateTable(timestamp, inputName .. " heating temperature", temperature, tempCapacity, category, "^C", inputColor)
+					UpdateTable(timestamp, inputName .. " heating temperature", temperature, tempCapacity, category, "°C", inputColor)
 				end
 			end
 
@@ -363,7 +372,7 @@ function ProcessTEP(timestamp, p)
 				end
 				if(productionAmount ~= nil and productionName ~= nil and productionCapacity ~= nil) then
 					local productionColor = GetMappedColorForName(productionName)
-					UpdateTable(timestamp, productionName .. " production", productionAmount/1000, productionCapacity/1000, category, "b", productionColor)
+					UpdateTable(timestamp, productionName .. " production", productionAmount/1000, productionCapacity/1000, category, "b/t", productionColor)
 				end
 
 			end
@@ -410,7 +419,7 @@ function ProcessSNA(timestamp, p)
 
 				if(productionAmount ~= nil and productionName ~= nil and productionCapacity ~= nil) then
 					local productionColor = GetMappedColorForName(productionName)
-					UpdateTable(timestamp, productionName .. " production", productionAmount/1000, productionCapacity/1000, category, "b", productionColor)
+					UpdateTable(timestamp, productionName .. " production", productionAmount/1000, productionCapacity/1000, category, "b/t", productionColor)
 				end
 
 			end
@@ -435,22 +444,23 @@ end
 function ProcessFusionLogic(timestamp, p)
 	-- PrintTermBtm(i .. ": Processing Fusion Reactor Logic Adapter")
 	local category = "fusion"
+	local isActiveCooled = false
 	if(p.getDTFuel ~= nil) then
 		local dtFuelData = p.getDTFuel()
 		if (dtFuelData ~= nil) then
-			UpdateTable(timestamp, "d-t fuel", dtFuelData.amount/1000, 1, category, "b", ColorMap.d_t_fuel)
+			UpdateTable(timestamp, "d-t fuel", dtFuelData.amount/1000, 1, category, "b/t", ColorMap.d_t_fuel)
 		end
 	end
 	if (p.getInjectionRate ~= nil) then
 		local injectionRate = p.getInjectionRate()
 		if (injectionRate ~= nil) then
-			UpdateTable(timestamp, "injection rate", injectionRate/1000, 99/1000, category, "b", ColorMap.d_t_fuel)
+			UpdateTable(timestamp, "injection rate", injectionRate/1000, 99/1000, category, "b/t", ColorMap.d_t_fuel)
 		end
 	end
 	if (p.getProductionRate ~= nil) then
 		local productionRate = p.getProductionRate()
 		if (productionRate ~= nil) then
-			UpdateTable(timestamp, "steam production", productionRate/1000, productionRate/1000, category, "b", ColorMap.steam)
+			UpdateTable(timestamp, "steam production", productionRate/1000, productionRate/1000, category, "b/t", ColorMap.steam)
 		end
 	end
 	if(p.getSteam ~= nil and p.getSteamCapacity  ~= nil) then
@@ -461,6 +471,7 @@ function ProcessFusionLogic(timestamp, p)
 			steamAmount = steam.amount
 		end
 		if(steamAmount ~= nil and steamCapacity ~= nil) then
+			isActiveCooled = true
 			UpdateTable(timestamp, "steam", steamAmount/1000, steamCapacity/1000, category, "b", ColorMap.steam)
 		end
 	end
@@ -472,6 +483,7 @@ function ProcessFusionLogic(timestamp, p)
 			waterAmount = water.amount
 		end
 		if(waterAmount ~= nil and waterCapacity ~= nil) then
+			isActiveCooled = true
 			UpdateTable(timestamp, "water", waterAmount/1000, waterCapacity/1000, category, "b", ColorMap.water)
 		end
 	end
@@ -497,6 +509,20 @@ function ProcessFusionLogic(timestamp, p)
 			UpdateTable(timestamp, "tritium", tritiumAmount/1000, tritiumCapacity/1000, "buffer", "b", ColorMap.tritium)
 		end
 	end
+	if(p.getPlasmaTemperature ~= nil and p.getMaxPlasmaTemperature ~= nil) then
+		local plasmaTemp = p.getPlasmaTemperature()
+		local maxPlasmaTemp = p.getMaxPlasmaTemperature(isActiveCooled)
+		if(plasmaTemp ~= nil and maxPlasmaTemp ~= nil) then
+			UpdateTable(timestamp, "plasma temperature", plasmaTemp, maxPlasmaTemp, category, "°C", ColorMap.tritium)
+		end
+	end
+	if(p.getCaseTemperature ~= nil and p.getMaxCasingTemperature ~= nil) then
+		local casingTemp = p.getCaseTemperature()
+		local maxCasingTemp = p.getMaxCasingTemperature(isActiveCooled)
+		if(casingTemp ~= nil and maxCasingTemp ~= nil) then
+			UpdateTable(timestamp, "case temperature", casingTemp, maxCasingTemp, category, "°C", ColorMap.tritium)
+		end
+	end
 end
 
 function ProcessFusionPort(timestamp, p)
@@ -520,7 +546,7 @@ function ProcessTurbine(timestamp, p)
 		local turbineFlowRate = p.getFlowRate()
 		local maxFlowRate = p.getMaxFlowRate()
 		if (turbineFlowRate ~= nil and maxFlowRate ~= nil) then
-			UpdateTable(timestamp,"steam flow rate", turbineFlowRate/1000, maxFlowRate/1000, category, "b", ColorMap.steam)
+			UpdateTable(timestamp,"steam flow rate", turbineFlowRate/1000, maxFlowRate/1000, category, "b/t", ColorMap.steam)
 		end
 	end
 
@@ -540,7 +566,7 @@ function ProcessTurbine(timestamp, p)
 		local productionRate = p.getProductionRate()
 		local maxProduction = p.getMaxProduction()
 		if (productionRate ~= nil and maxProduction ~= nil) then
-			UpdateTable(timestamp,"energy production", productionRate, maxProduction, category, "FE", ColorMap.energy)
+			UpdateTable(timestamp,"energy production", productionRate, maxProduction, category, "FE/t", ColorMap.energy)
 		end
 	end
 
@@ -613,6 +639,124 @@ function CollectLocalData()
 		-- If there are fewer than 10 peripherals, process them in current task
         ProcessPeripheralChunk(peripherals, timestamp)
 	end
+end
+
+function AggregateData()
+	local aggregatedData = {}
+    for _, timestamps in pairs(ContentData) do
+        for _, categories in pairs(timestamps) do
+            for category, names in pairs(categories) do
+                for name, metrics in pairs(names) do
+                    if aggregatedData[category] == nil then
+                        aggregatedData[category] = { }
+                    end
+                    if aggregatedData[category][name] == nil then
+                        aggregatedData[category][name] = {
+                            count = 0,
+                            max = 0,
+                            devices = 0,
+							legend = ""
+                        }
+                    end
+                    -- Aggregate the counts and max values, increment device count
+                    aggregatedData[category][name].count = aggregatedData[category][name].count + (metrics["count"] or 0)
+                    aggregatedData[category][name].max = aggregatedData[category][name].max + (metrics["max"] or 0)
+                    aggregatedData[category][name].devices = aggregatedData[category][name].devices + (metrics["devices"] or 0)
+					if aggregatedData[category][name].legend == "" then
+						aggregatedData[category][name].legend = metrics["legend"] or ""
+					end
+                end
+            end
+        end
+    end
+	return aggregatedData
+end
+
+
+local lastSentValues = {}
+function HasValueChanged(category, name, currentValue)
+    local key = category .. "_" .. name
+    if lastSentValues[key] ~= currentValue then
+        lastSentValues[key] = currentValue
+        return true
+    else
+        return false
+    end
+end
+
+-- produces prometheus data with name format:  <prefix><category>_<name>(_[max|devices])
+function FormatForPrometheus()
+	local prefix = GrafanSettings.dataNamePrefix or "minecraft_"
+	local aggregatedData = AggregateData()
+    local prometheusData = {}
+    for category, itemList in pairs(aggregatedData) do
+		for name, metrics in pairs(itemList) do
+			local count = metrics.count
+			local max = metrics.max
+			local devices = metrics.devices
+			local legend = metrics.legend or ""
+			if max > 0 and name ~= "empty" then
+				-- For metrics that need to be averaged
+				if TableContains(AverageValues, name) then
+					count = count / devices
+					max = max / devices
+				end
+				-- Prometheus metric format: my_metric_name{label1="value1",label2="value2"} value
+				local fixxedName = string.gsub(string.gsub(name, " ", "_"), "-", "_")
+				local metricName = string.format('%s%s_%s', prefix, category, fixxedName)
+				local labels = string.format('category="%s",name="%s",legend="%s"', category, name, legend)
+				if HasValueChanged(category, name, count) then
+					table.insert(prometheusData, string.format('# TYPE %s gauge', metricName))
+					table.insert(prometheusData, string.format('%s{%s} %f', metricName, labels, count))
+				end
+				if HasValueChanged(category, name .. "_max", max) then
+					table.insert(prometheusData, string.format('# TYPE %s_max gauge', metricName))
+					table.insert(prometheusData, string.format('%s_max{%s} %f', metricName, labels, max))
+				end
+				if HasValueChanged(category, name .. "_devices", devices) then
+					table.insert(prometheusData, string.format('# TYPE %s_devices gauge', metricName))
+					table.insert(prometheusData, string.format('%s_devices{%s} %f', metricName, labels, devices))
+				end
+			end
+		end
+    end
+    return prometheusData
+end
+
+
+-- Function to send data to Pushgateway
+function PushDataToGateway(metrics)
+    local authHeader = 'Basic ' .. GrafanSettings.basicAuthHeader
+    local data = table.concat(metrics, '\n') .. "\n\n"
+    local headers = {
+        ["Authorization"] = authHeader,
+        ["Content-Type"] = "text/plain"
+    }
+	local postUrl = GrafanSettings.pushGatewayUrl .. "/metrics/job/" .. GrafanSettings.jobname
+    local response, errReason, errResponse = http.post(postUrl, data, headers)
+    if response ~= nil then
+		local statusCode = response.getResponseCode()
+        PrintTermBtm("Data pushed to Gateway | " .. statusCode)
+        response.close()
+		return statusCode >= 200 and statusCode < 300
+    end
+	if errReason ~= nil then
+		if errResponse  ~= nil then
+			error("Error Gateway push: " .. errReason .. " | " .. errResponse.getResponseCode() .. " | " .. errResponse.readAll())
+		else
+			error("Error Gateway push: " .. errReason)
+		end
+	else
+		error("Failed pushing to Gateway: Nil Response.")
+	end
+end
+
+function ClearDataOnGateway()
+	PrintTermBtm("Clearing data on gateway.")
+    local authHeader = 'Basic ' .. GrafanSettings.basicAuthHeader
+	local clearUrl = GrafanSettings.pushGatewayUrl .. "/metrics/job/" .. GrafanSettings.jobname
+    http.request(clearUrl, "", {["Authorization"] = authHeader}, false, "DELETE")
+	sleep(3)
 end
 
 
@@ -695,9 +839,12 @@ end
 
 function PrintMonitorStat(mon, strName, strAmount, strMax, strLegend, barColor)
 	local screenWidth, _ = mon.getSize()
-	local nameLen = screenWidth - 10 -- 2 = space, 5 = unit, 1 = exponent, 2 = legend
+	local unitLegLen = 6  -- 5 = unit, 1 = exponent
+	local spacePadCount = 1 -- min spaces between name and count
+	local maxLegend = 4 -- max length of unit (e.g. "FE/t")
+	local nameLen = screenWidth - maxLegend - spacePadCount - unitLegLen
 
-	local padLegend = PadStringR(strLegend, math.min(Const.MaxLegend, string.len(strLegend)))
+	local padLegend = PadStringR(strLegend, math.min(maxLegend, string.len(strLegend)))
 	local padName = PadStringR(strName, nameLen)
 
 	local formattedAmount, unit = strAmount, ""
@@ -722,7 +869,8 @@ function PrintMonitorStat(mon, strName, strAmount, strMax, strLegend, barColor)
 		formattedAmount = string.format("%.3f", strAmount)
 	end
 	local paddedAmount = string.format("%5s", formattedAmount)
-	local line = string.format("%s  %8s", padName, paddedAmount .. unit .. padLegend)
+	local spacePadding = string.rep(" ", spacePadCount)
+	local line = string.format("%s%" .. (maxLegend+unitLegLen) .. "s", padName .. spacePadding, paddedAmount .. unit .. padLegend)
 
 	mon.setCursorPos(1,CurLine)
 	local percent = 0
@@ -939,6 +1087,10 @@ function MainLoop()
 						PrintTermBtm("Transmitted data.")
 					end
 				end
+				if(GrafanSettings.enabled) then
+					local promData = FormatForPrometheus()
+					local success = PushDataToGateway(promData)
+				end
 				if outDevice then
 					UpdateMonitor(outDevice)
 				end
@@ -946,7 +1098,7 @@ function MainLoop()
 				timerUpdate = os.startTimer(sett.UpdateInterval)
 			end
 		end
-	
+
 		if (event == "modem_message") then
 			if (sett.IsReceiver == true) then
 				wirelessEventCount = wirelessEventCount + 1
@@ -979,6 +1131,10 @@ function MainLoop()
 			PrintTermBtm("Updating peripherals.")
 			ConfigurePeripherals()
 		end
+
+		if (event == "http_failure") or (event == "peripheral_detach") then
+			error("network request failed: " .. param2 .. " | " .. param1 .. " " .. param3.getResponseCode())
+		end
 	end
 end
 
@@ -1003,6 +1159,10 @@ function Main()
 	CollectLocalData()
 	if outDevice then
 		UpdateMonitor(outDevice)
+	end
+
+	if(GrafanSettings.enabled) then
+		ClearDataOnGateway()
 	end
 
 	-- go into run loop
